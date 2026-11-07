@@ -4,6 +4,7 @@ import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
 import com.hiromishikata.timetrackingradio.adapter.http.HttpSelectionRepository
+import com.hiromishikata.timetrackingradio.adapter.http.HttpTransport
 import com.hiromishikata.timetrackingradio.adapter.http.HttpUrlConnectionTransport
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueWidgetSettingsRepository
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueWidgetSnapshotRepository
@@ -17,7 +18,10 @@ import com.hiromishikata.timetrackingradio.usecase.WidgetSnapshotReadUseCase
 import kotlinx.coroutines.sync.withLock
 import java.time.Instant
 
-class WidgetController(private val context: Context) {
+class WidgetController(
+    private val context: Context,
+    private val transportFactory: () -> HttpTransport = { HttpUrlConnectionTransport() },
+) {
     private val store = SharedPreferencesKeyValueStore(
         context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE),
     )
@@ -56,5 +60,5 @@ class WidgetController(private val context: Context) {
     }
 
     private fun selectionsFor(current: WidgetSettings): SelectionRepository =
-        HttpSelectionRepository(current.endpointUrl, HttpUrlConnectionTransport())
+        HttpSelectionRepository(current.endpointUrl, transportFactory())
 }

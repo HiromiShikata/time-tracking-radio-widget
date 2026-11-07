@@ -53,7 +53,7 @@ Requirements: JDK 17 and the Android SDK (platform 36).
 ./gradlew testDebugUnitTest   # unit tests; writes screenshots to app/build/outputs/roborazzi
 ./gradlew lint                # Android lint
 ./gradlew assembleDebug       # debug APK
-git config core.hooksPath .githooks   # once per clone: pre-push runs lint and unit tests
+# the first Gradle build sets core.hooksPath to .githooks, so every push runs lint and unit tests
 ```
 
 Domain logic is plain Kotlin under `domain/`, use cases under `usecase/`, and Android adapters under `adapter/`. The signing key `app/testkey_untrusted.jks` is public on purpose, so that every build and release can be installed over the previous one. Do not use it for anything else.

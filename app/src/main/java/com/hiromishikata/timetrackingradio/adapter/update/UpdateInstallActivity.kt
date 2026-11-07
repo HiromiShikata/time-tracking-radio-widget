@@ -7,6 +7,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import com.hiromishikata.timetrackingradio.R
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -16,7 +17,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 class UpdateInstallActivity : Activity() {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private lateinit var scope: CoroutineScope
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -26,9 +27,10 @@ class UpdateInstallActivity : Activity() {
             finish()
             return
         }
+        scope = CoroutineScope(SupervisorJob() + mainDispatcher)
         scope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching { ApkDownloader(cacheDir).download(apkUrl) }
+            val result = withContext(ioDispatcher) {
+                runCatching { fetcher.fetch(apkUrl, cacheDir) }
             }
             result.onSuccess { apk -> startInstaller(apk) }
                 .onFailure { failure ->
@@ -40,7 +42,7 @@ class UpdateInstallActivity : Activity() {
     }
 
     override fun onDestroy() {
-        scope.cancel()
+        if (::scope.isInitialized) scope.cancel()
         super.onDestroy()
     }
 
@@ -56,5 +58,9 @@ class UpdateInstallActivity : Activity() {
         const val EXTRA_APK_URL = "com.hiromishikata.timetrackingradio.extra.APK_URL"
         private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
         private const val TAG = "UpdateInstallActivity"
+
+        internal var fetcher: ApkFetcher = DefaultApkFetcher
+        internal var ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+        internal var mainDispatcher: CoroutineDispatcher = Dispatchers.Main
     }
 }

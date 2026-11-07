@@ -72,3 +72,30 @@ dependencies {
     testImplementation("androidx.work:work-testing:2.12.0")
     testImplementation("io.github.takahirom.roborazzi:roborazzi:1.32.0")
 }
+
+val installGitHooks by tasks.registering {
+    description = "Points git at the committed .githooks directory unless core.hooksPath is already set."
+    doLast {
+        val repository = rootProject.projectDir
+        if (!File(repository, ".git").exists()) return@doLast
+        val probe = ProcessBuilder("git", "config", "--get", "core.hooksPath")
+            .directory(repository)
+            .redirectErrorStream(true)
+            .start()
+        val configured = probe.inputStream.bufferedReader().readText().trim()
+        probe.waitFor()
+        if (configured.isEmpty()) {
+            val set = ProcessBuilder("git", "config", "core.hooksPath", ".githooks")
+                .directory(repository)
+                .inheritIO()
+                .start()
+            check(set.waitFor() == 0) { "git config core.hooksPath .githooks failed" }
+        }
+    }
+}
+
+afterEvaluate {
+    tasks.named("preBuild") {
+        dependsOn(installGitHooks)
+    }
+}

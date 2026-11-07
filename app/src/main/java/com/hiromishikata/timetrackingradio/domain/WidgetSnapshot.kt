@@ -23,12 +23,14 @@ data class WidgetSnapshot(
 
 fun applySelectionResponse(response: SelectionResponse, previous: WidgetSnapshot, now: Instant): WidgetSnapshot =
     when (response) {
-        is SelectionResponse.Accepted -> WidgetSnapshot(response.selection, now, WidgetOutcome.Settled, previous.sending)
+        is SelectionResponse.Accepted -> WidgetSnapshot(response.selection, now, WidgetOutcome.Settled, null)
         is SelectionResponse.Rejected -> when (val reported = response.reported) {
             is ReportedSelection.Reported ->
-                WidgetSnapshot(reported.selection, now, WidgetOutcome.Rejected(response.message), previous.sending)
-            ReportedSelection.NotReported -> previous.copy(outcome = WidgetOutcome.Rejected(response.message))
+                WidgetSnapshot(reported.selection, now, WidgetOutcome.Rejected(response.message), null)
+            ReportedSelection.NotReported ->
+                previous.copy(outcome = WidgetOutcome.Rejected(response.message), sending = null)
         }
     }
 
-fun markUnreachable(previous: WidgetSnapshot): WidgetSnapshot = previous.copy(outcome = WidgetOutcome.Unreachable)
+fun markUnreachable(previous: WidgetSnapshot): WidgetSnapshot =
+    previous.copy(outcome = WidgetOutcome.Unreachable, sending = null)

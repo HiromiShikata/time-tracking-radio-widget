@@ -14,9 +14,10 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.hiromishikata.timetrackingradio.R
 import com.hiromishikata.timetrackingradio.domain.SemanticVersion
+import com.hiromishikata.timetrackingradio.domain.UpdateAnnouncer
 
-class UpdateNotifier(private val context: Context) {
-    fun notifyAvailable(version: SemanticVersion, apkUrl: String) {
+class UpdateNotifier(private val context: Context) : UpdateAnnouncer {
+    override fun announce(version: SemanticVersion, apkDownloadUrl: String) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
@@ -26,7 +27,7 @@ class UpdateNotifier(private val context: Context) {
         }
         ensureChannel()
         val intent = Intent(context, UpdateInstallActivity::class.java)
-            .putExtra(UpdateInstallActivity.EXTRA_APK_URL, apkUrl)
+            .putExtra(UpdateInstallActivity.EXTRA_APK_URL, apkDownloadUrl)
         val pending = PendingIntent.getActivity(
             context,
             REQUEST_CODE,
