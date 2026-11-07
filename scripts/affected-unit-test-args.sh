@@ -5,9 +5,18 @@
 set -euo pipefail
 
 ZERO_SHA=0000000000000000000000000000000000000000
+STOP_WORDS=" as break class continue do else false for fun if in interface is null object package return super this throw true try typealias val var when while import private public internal protected override open data sealed enum abstract companion const suspend inline Int Long Short Byte Double Float Char Boolean String Unit Any Nothing List Map Set Pair Array "
 
 print_full() {
   echo "RUN=full"
+  exit 0
+}
+
+print_filtered() {
+  echo "RUN=filtered"
+  printf '%s\n' "$@" | sort -u | while IFS= read -r class_name; do
+    printf -- '--tests\n*.%s\n' "${class_name}"
+  done
   exit 0
 }
 
@@ -22,53 +31,111 @@ is_full_trigger() {
   esac
 }
 
-main_identifiers() {
-  local file="$1"
-  {
-    basename "${file}" .kt
-    sed -E 's/\bfun interface\b/interface/g' "${file}" \
-      | grep -oE '\b(class|object|interface|fun|val|var|typealias) +[A-Za-z_][A-Za-z0-9_]*' \
-      | awk '{ print $NF }' || true
-  } | sort -u
+# Keeps each name once and drops Kotlin keywords and builtin types, which never identify a project declaration.
+filter_names() {
+  awk -v stop="${STOP_WORDS}" '{ if (index(stop, " " $0 " ") == 0 && !seen[$0]++) print }'
+}
+
+# Every identifier-like token of a Kotlin file, outside package and import lines.
+file_tokens() {
+  { grep -vE '^[[:space:]]*(package|import)[[:space:]]' "$1" || true; } \
+    | { grep -oE '[A-Za-z_][A-Za-z0-9_]*' || true; } \
+    | filter_names
+}
+
+# Identifier tokens of the lines that declare something (class, object, interface, fun, val, var, typealias).
+# Generic and receiver-qualified functions such as fun <T> List<T>.name() are covered, since every token
+# on the line is kept.
+declaration_tokens() {
+  { grep -E '(^|[^A-Za-z0-9_])(class|object|interface|fun|val|var|typealias)([^A-Za-z0-9_]|$)' "$1" || true; } \
+    | { grep -oE '[A-Za-z_][A-Za-z0-9_]*' || true; } \
+    | filter_names
 }
 
 main() {
-  local base="${1:-}" head="${2:-HEAD}" path identifier referencing
+  local base="${1:-}" head="${2:-HEAD}" path file tok
   if [[ -z "${base}" || "${base}" == "${ZERO_SHA}" ]]; then print_full; fi
   if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then print_full; fi
   if ! git cat-file -e "${head}^{commit}" 2>/dev/null; then print_full; fi
 
-  local -a changed=() classes=()
+  local -a changed=() changed_main=() changed_tests=()
   mapfile -t changed < <(git diff --name-only "${base}" "${head}")
   for path in "${changed[@]}"; do
     if is_full_trigger "${path}"; then print_full; fi
   done
-
   for path in "${changed[@]}"; do
     case "${path}" in
-      app/src/test/*Test.kt)
-        classes+=("$(basename "${path}" .kt)")
-        ;;
       app/src/main/java/*.kt)
         if [[ ! -f "${path}" ]]; then print_full; fi
-        while IFS= read -r identifier; do
-          while IFS= read -r referencing; do
-            if [[ "${referencing}" != app/src/test/*Test.kt ]]; then print_full; fi
-            classes+=("$(basename "${referencing}" .kt)")
-          done < <(grep -rlw --include='*.kt' -- "${identifier}" app/src/test 2>/dev/null || true)
-        done < <(main_identifiers "${path}")
+        changed_main+=("${path}")
+        ;;
+      app/src/test/*Test.kt)
+        if [[ -f "${path}" ]]; then changed_tests+=("${path}"); fi
         ;;
     esac
   done
 
-  if [[ ${#classes[@]} -eq 0 ]]; then
-    echo "RUN=none"
-    exit 0
+  if [[ ${#changed_main[@]} -eq 0 ]]; then
+    if [[ ${#changed_tests[@]} -eq 0 ]]; then echo "RUN=none"; exit 0; fi
+    print_filtered "$(for file in "${changed_tests[@]}"; do basename "${file}" .kt; done)"
   fi
-  echo "RUN=filtered"
-  printf '%s\n' "${classes[@]}" | sort -u | while IFS= read -r class_name; do
-    printf -- '--tests\n*.%s\n' "${class_name}"
+
+  # Affected names: every name declared by a changed main file, grown transitively through main files
+  # that mention an affected name.
+  local -A names=() affected=() tokens=() declared=()
+  local -a main_files=() test_files=()
+  mapfile -t main_files < <(find app/src/main/java -name '*.kt' -type f | sort)
+  for file in "${main_files[@]}"; do
+    tokens["${file}"]="$(file_tokens "${file}")"
+    declared["${file}"]="$(declaration_tokens "${file}")"
   done
+  for file in "${changed_main[@]}"; do
+    affected["${file}"]=1
+    while IFS= read -r tok; do
+      if [[ -n "${tok}" ]]; then names["${tok}"]=1; fi
+    done <<<"${declared[${file}]}"
+  done
+
+  local progress=1 matched
+  while [[ "${progress}" -eq 1 ]]; do
+    progress=0
+    for file in "${main_files[@]}"; do
+      if [[ -n "${affected[${file}]:-}" ]]; then continue; fi
+      matched=0
+      while IFS= read -r tok; do
+        if [[ -n "${tok}" && -n "${names[${tok}]:-}" ]]; then matched=1; break; fi
+      done <<<"${tokens[${file}]}"
+      if [[ "${matched}" -eq 1 ]]; then
+        affected["${file}"]=1
+        progress=1
+        while IFS= read -r tok; do
+          if [[ -n "${tok}" ]]; then names["${tok}"]=1; fi
+        done <<<"${declared[${file}]}"
+      fi
+    done
+  done
+
+  # Every test that mentions an affected name runs, as do the changed test classes that still exist.
+  # A shared test helper that mentions an affected name is not attributable to one class, so the
+  # full suite runs instead.
+  local -a selected=()
+  mapfile -t test_files < <(find app/src/test -name '*.kt' -type f | sort)
+  for file in "${test_files[@]}"; do
+    matched=0
+    while IFS= read -r tok; do
+      if [[ -n "${tok}" && -n "${names[${tok}]:-}" ]]; then matched=1; break; fi
+    done < <(file_tokens "${file}")
+    if [[ "${matched}" -eq 1 ]]; then
+      if [[ "${file}" != *Test.kt ]]; then print_full; fi
+      selected+=("$(basename "${file}" .kt)")
+    fi
+  done
+  for file in "${changed_tests[@]}"; do
+    selected+=("$(basename "${file}" .kt)")
+  done
+
+  if [[ ${#selected[@]} -eq 0 ]]; then print_full; fi
+  print_filtered "${selected[@]}"
 }
 
 main "$@"
