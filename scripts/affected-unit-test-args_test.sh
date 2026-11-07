@@ -57,6 +57,25 @@ class BarTest {
   write_file app/src/test/java/pkg/Helpers.kt 'package pkg
 
 object Helpers'
+  write_file app/src/main/java/pkg/Ext.kt 'package pkg
+
+fun <T> List<T>.summarize(): Int = size'
+  write_file app/src/test/java/pkg/SummarizeTest.kt 'package pkg
+
+class SummarizeTest {
+    val total = listOf(1).summarize()
+}'
+  write_file app/src/main/java/pkg/HelperA.kt 'package pkg
+
+fun helperA(): Int = 1'
+  write_file app/src/main/java/pkg/UseB.kt 'package pkg
+
+fun useB(): Int = helperA()'
+  write_file app/src/test/java/pkg/UsesBTest.kt 'package pkg
+
+class UsesBTest {
+    val x = useB()
+}'
   git add -A
   git commit -q -m base
   base_sha="$(git rev-parse HEAD)"
@@ -74,6 +93,9 @@ m_bartest() { printf '\n' >> app/src/test/java/pkg/BarTest.kt; }
 m_unused() { printf '\n' >> app/src/main/java/pkg/Unused.kt; }
 m_foo_and_bartest() { m_foo; m_bartest; }
 m_delete_bar() { git rm -q app/src/main/java/pkg/Bar.kt; }
+m_ext() { printf '\n' >> app/src/main/java/pkg/Ext.kt; }
+m_helper_a() { printf '\n' >> app/src/main/java/pkg/HelperA.kt; }
+m_delete_foo_test() { git rm -q app/src/test/java/pkg/FooTest.kt; }
 
 run_case() {
   local name="$1" base_kind="$2" expected="$3" mutate="$4"
@@ -110,9 +132,12 @@ run_case "main resource changed" previous 'RUN=full' m_resource
 run_case "test helper changed" previous 'RUN=full' m_helper
 run_case "main class with a test" previous "${FILTER_FOO}" m_foo
 run_case "test class edited" previous "${FILTER_BAR}" m_bartest
-run_case "main class without a test" previous 'RUN=none' m_unused
+run_case "main class without a test runs the full suite" previous 'RUN=full' m_unused
 run_case "main class and an unrelated test" previous "${FILTER_BOTH}" m_foo_and_bartest
 run_case "main class deleted" previous 'RUN=full' m_delete_bar
+run_case "generic extension function" previous $'RUN=filtered\n--tests\n*.SummarizeTest' m_ext
+run_case "transitive dependency runs the test of the dependant" previous $'RUN=filtered\n--tests\n*.UsesBTest' m_helper_a
+run_case "deleted test only" previous 'RUN=none' m_delete_foo_test
 
 echo "${count} cases, ${failures} failures"
 [[ "${failures}" -eq 0 ]]
