@@ -36,10 +36,10 @@ class WidgetSnapshotReadUseCaseTest {
                 WidgetSnapshot(Selection(work, earlier), now, WidgetOutcome.Settled, null),
             ),
             Case(
-                "network failure keeps the last state and the in-flight request",
+                "network failure keeps the last state and clears a stale request",
                 WidgetSnapshot(Selection(work, earlier), earlier, WidgetOutcome.Settled, SelectionRequest.Select(meeting)),
                 unreachable,
-                WidgetSnapshot(Selection(work, earlier), earlier, WidgetOutcome.Unreachable, SelectionRequest.Select(meeting)),
+                WidgetSnapshot(Selection(work, earlier), earlier, WidgetOutcome.Unreachable, null),
             ),
             Case(
                 "rejection without a reported selection keeps the last state",
