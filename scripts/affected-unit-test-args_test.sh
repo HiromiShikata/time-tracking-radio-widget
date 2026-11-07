@@ -171,8 +171,8 @@ run_case "test class edited" previous "${FILTER_BAR}" m_bartest
 run_case "main class without a test runs the full suite" previous 'RUN=full' m_unused
 run_case "main class and an unrelated test" previous "${FILTER_BOTH}" m_foo_and_bartest
 run_case "main class deleted" previous 'RUN=full' m_delete_bar
-run_case "generic extension function" previous $'RUN=filtered\n--tests\n*.SummarizeTest' m_ext
-run_case "transitive dependency runs the test of the dependant" previous $'RUN=filtered\n--tests\n*.UsesBTest' m_helper_a
+run_case "generic extension function" previous $'RUN=filtered\n--tests\n*.SummarizeTest\n--tests\n*.UsesBTest' m_ext
+run_case "transitive dependency runs the test of the dependant" previous $'RUN=filtered\n--tests\n*.SummarizeTest\n--tests\n*.UsesBTest' m_helper_a
 run_case "deleted test only" previous 'RUN=none' m_delete_foo_test
 run_case "top-level declaration named after a soft keyword" previous $'RUN=filtered\n--tests\n*.DataUserTest' m_settings
 run_case "test file with two classes runs every class" previous $'RUN=filtered\n--tests\n*.MultiTest\n--tests\n*.OtherTest' m_solo

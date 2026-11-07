@@ -5,16 +5,27 @@
 set -euo pipefail
 
 ZERO_SHA=0000000000000000000000000000000000000000
-STOP_WORDS=" as break class continue do else false for fun if in interface is null object package return super this throw true try typealias val var when while import private public internal protected override open data sealed enum abstract companion const suspend inline Int Long Short Byte Double Float Char Boolean String Unit Any Nothing List Map Set Pair Array "
+# Kotlin hard keywords can never be identifiers, so they are the only words dropped from the names.
+# Soft keywords and modifiers (data, value, open, inner, field, ...) stay selectable.
+HARD_KEYWORDS=" as break class continue do else false for fun if in interface is null object package return super this throw true try typealias typeof val var when while "
 
 print_full() {
   echo "RUN=full"
   exit 0
 }
 
-print_filtered() {
+print_test_files() {
+  local -a classes=()
+  local file name found
+  for file in "$@"; do
+    found=0
+    while IFS= read -r name; do
+      if [[ -n "${name}" ]]; then classes+=("${name}"); found=1; fi
+    done < <(declared_class_names "${file}")
+    if [[ "${found}" -eq 0 ]]; then classes+=("$(basename "${file}" .kt)"); fi
+  done
   echo "RUN=filtered"
-  printf '%s\n' "$@" | sort -u | while IFS= read -r class_name; do
+  printf '%s\n' "${classes[@]}" | sort -u | while IFS= read -r class_name; do
     printf -- '--tests\n*.%s\n' "${class_name}"
   done
   exit 0
@@ -31,16 +42,23 @@ is_full_trigger() {
   esac
 }
 
-# Keeps each name once and drops Kotlin keywords and builtin types, which never identify a project declaration.
+# Keeps each name once and drops only Kotlin hard keywords.
 filter_names() {
-  awk -v stop="${STOP_WORDS}" '{ if (index(stop, " " $0 " ") == 0 && !seen[$0]++) print }'
+  awk -v stop="${HARD_KEYWORDS}" '{ if (index(stop, " " $0 " ") == 0 && !seen[$0]++) print }'
 }
 
-# Every identifier-like token of a Kotlin file, outside package and import lines.
+# Every identifier-like token of a Kotlin file, including import lines (an aliased import hides the
+# original name behind the alias, so the import line is the only place the dependency is visible).
 file_tokens() {
-  { grep -vE '^[[:space:]]*(package|import)[[:space:]]' "$1" || true; } \
+  { grep -vE '^[[:space:]]*package[[:space:]]' "$1" || true; } \
     | { grep -oE '[A-Za-z_][A-Za-z0-9_]*' || true; } \
     | filter_names
+}
+
+# Names of the classes and objects a test file declares; each one gets its own --tests filter.
+declared_class_names() {
+  { grep -oE '(^|[^A-Za-z0-9_])(class|object) +[A-Za-z_][A-Za-z0-9_]*' "$1" || true; } \
+    | awk '{ print $NF }' | sort -u
 }
 
 # Identifier tokens of the lines that declare something (class, object, interface, fun, val, var, typealias).
@@ -77,7 +95,7 @@ main() {
 
   if [[ ${#changed_main[@]} -eq 0 ]]; then
     if [[ ${#changed_tests[@]} -eq 0 ]]; then echo "RUN=none"; exit 0; fi
-    print_filtered "$(for file in "${changed_tests[@]}"; do basename "${file}" .kt; done)"
+    print_test_files "${changed_tests[@]}"
   fi
 
   # Affected names: every name declared by a changed main file, grown transitively through main files
@@ -127,15 +145,15 @@ main() {
     done < <(file_tokens "${file}")
     if [[ "${matched}" -eq 1 ]]; then
       if [[ "${file}" != *Test.kt ]]; then print_full; fi
-      selected+=("$(basename "${file}" .kt)")
+      selected+=("${file}")
     fi
   done
   for file in "${changed_tests[@]}"; do
-    selected+=("$(basename "${file}" .kt)")
+    selected+=("${file}")
   done
 
   if [[ ${#selected[@]} -eq 0 ]]; then print_full; fi
-  print_filtered "${selected[@]}"
+  print_test_files "${selected[@]}"
 }
 
 main "$@"
