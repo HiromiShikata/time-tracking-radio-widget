@@ -26,7 +26,9 @@ main_identifiers() {
   local file="$1"
   {
     basename "${file}" .kt
-    grep -oP '(?<=\b(?:class|object|interface|fun|val|var|typealias) )[A-Za-z_][A-Za-z0-9_]*' "${file}" || true
+    sed -E 's/\bfun interface\b/interface/g' "${file}" \
+      | grep -oE '\b(class|object|interface|fun|val|var|typealias) +[A-Za-z_][A-Za-z0-9_]*' \
+      | awk '{ print $NF }' || true
   } | sort -u
 }
 
