@@ -1,20 +1,19 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("app.cash.paparazzi")
 }
 
 val releaseVersionCode = (System.getenv("APP_VERSION_CODE") ?: "1").toInt()
-val releaseVersionName = System.getenv("APP_VERSION_NAME") ?: "0.0.0-dev"
+val releaseVersionName = System.getenv("APP_VERSION_NAME") ?: "0.0.0"
 
 android {
     namespace = "com.hiromishikata.timetrackingradio"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.hiromishikata.timetrackingradio"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 36
         versionCode = releaseVersionCode
         versionName = releaseVersionName
     }
@@ -49,9 +48,7 @@ android {
 
     lint {
         abortOnError = true
-        warningsAsErrors = true
         checkDependencies = false
-        disable += setOf("OldTargetApi")
     }
 
     testOptions {
@@ -59,11 +56,18 @@ android {
     }
 }
 
+tasks.withType<Test> {
+    systemProperty("roborazzi.test.record", "true")
+}
+
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
-    implementation("androidx.work:work-runtime-ktx:2.9.1")
-    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("androidx.work:work-runtime-ktx:2.12.0")
+    implementation("androidx.core:core-ktx:1.16.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    testImplementation("org.robolectric:robolectric:4.13")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.32.0")
 }

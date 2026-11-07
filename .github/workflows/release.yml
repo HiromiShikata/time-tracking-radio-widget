@@ -1,0 +1,33 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    env:
+      APP_VERSION_CODE: ${{ github.run_number }}
+      APP_VERSION_NAME: 1.0.${{ github.run_number }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build signed release APK
+        run: ./gradlew --no-daemon assembleRelease
+      - name: Publish GitHub release with the APK
+        run: |
+          set -euo pipefail
+          tag="v${APP_VERSION_NAME}"
+          apk="time-tracking-radio-widget-${APP_VERSION_NAME}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "${apk}"
+          gh release create "${tag}" "${apk}" --target "${GITHUB_SHA}" --title "${tag}" --generate-notes
