@@ -16,6 +16,7 @@ import com.hiromishikata.timetrackingradio.domain.WidgetOutcome
 import com.hiromishikata.timetrackingradio.domain.WidgetSettings
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -34,7 +35,7 @@ class WidgetControllerTest {
     private val settings = WidgetSettings("https://example.com/exec?key=example", listOf("project-a", "project-b"))
     private val meeting = CellKey("project-a", ActivityKind.MEETING)
 
-    private fun controller(transport: FakeHttpTransport) = WidgetController(context) { transport }
+    private fun controller(transport: FakeHttpTransport) = WidgetController(context, { transport }) { _, _ -> }
 
     @Test
     fun tapWithoutSettingsDoesNothing() {
@@ -64,5 +65,17 @@ class WidgetControllerTest {
         val stored = KeyValueWidgetSnapshotRepository(store).read()
         assertEquals(WidgetOutcome.Unreachable, stored.outcome)
         assertNull(stored.sending)
+    }
+
+    @Test
+    fun anUnexpectedFailureStillRendersTheClearedScreen() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val rendered = mutableListOf<WidgetSnapshot>()
+        val transport = FakeHttpTransport(ArrayDeque(listOf({ throw IllegalStateException("unexpected") })))
+        val controller = WidgetController(context, { transport }) { _, snapshot -> rendered += snapshot }
+        val thrown = runCatching { runBlocking { controller.tap(meeting) } }.exceptionOrNull()
+        assertTrue("thrown=$thrown", thrown is IllegalStateException)
+        assertTrue("the dashed ring was never rendered", rendered.any { it.sending != null })
+        assertNull("the last rendered screen still shows a sending cell", rendered.last().sending)
     }
 }
