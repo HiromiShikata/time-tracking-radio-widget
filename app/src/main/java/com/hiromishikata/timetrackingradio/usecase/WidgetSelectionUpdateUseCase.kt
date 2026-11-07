@@ -1,0 +1,36 @@
+package com.hiromishikata.timetrackingradio.usecase
+
+import com.hiromishikata.timetrackingradio.domain.CellKey
+import com.hiromishikata.timetrackingradio.domain.CommunicationFailedException
+import com.hiromishikata.timetrackingradio.domain.SelectionRepository
+import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
+import com.hiromishikata.timetrackingradio.domain.WidgetSnapshotRepository
+import com.hiromishikata.timetrackingradio.domain.applySelectionResponse
+import com.hiromishikata.timetrackingradio.domain.markUnreachable
+import com.hiromishikata.timetrackingradio.domain.resolveTapRequest
+import java.time.Instant
+
+class WidgetSelectionUpdateUseCase(
+    private val selections: SelectionRepository,
+    private val snapshots: WidgetSnapshotRepository,
+    private val afterSendingStarted: () -> Unit = {},
+    private val clock: () -> Instant,
+) {
+    fun execute(tapped: CellKey): WidgetSnapshot {
+        val previous = snapshots.read()
+        val request = resolveTapRequest(previous.selection, tapped)
+        val sending = previous.copy(sending = request)
+        snapshots.write(sending)
+        val finished = try {
+            afterSendingStarted()
+            applySelectionResponse(selections.update(request), sending, clock()).copy(sending = null)
+        } catch (failure: CommunicationFailedException) {
+            markUnreachable(sending).copy(sending = null)
+        } catch (failure: Throwable) {
+            snapshots.write(sending.copy(sending = null))
+            throw failure
+        }
+        snapshots.write(finished)
+        return finished
+    }
+}

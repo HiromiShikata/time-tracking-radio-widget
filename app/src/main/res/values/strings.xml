@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Time tracking radio</string>
+    <string name="header_work">work</string>
+    <string name="header_meeting">meeting</string>
+    <string name="status_recording">Recording %1$s / %2$s since %3$s UTC</string>
+    <string name="status_not_recording">Not recording</string>
+    <string name="status_switching">Switching to %1$s / %2$s…</string>
+    <string name="status_unreachable">⚠ Could not connect (showing state as of %1$s UTC)</string>
+    <string name="status_server_rejected">⚠ %1$s</string>
+    <string name="settings_title">Settings</string>
+    <string name="endpoint_label">Endpoint URL</string>
+    <string name="projects_label">Projects (one per line)</string>
+    <string name="save">Save</string>
+    <string name="settings_helper">Widget rows appear in this order</string>
+    <string name="settings_saved">Saved.</string>
+    <string name="problem_endpoint_empty">Enter the endpoint URL.</string>
+    <string name="problem_endpoint_not_https">The endpoint URL must start with https://</string>
+    <string name="problem_projects_empty">Enter at least one project.</string>
+    <string name="problem_project_duplicated">Project names must be unique.</string>
+    <string name="update_channel_name">App updates</string>
+    <string name="update_available">Version %1$s is available. Tap to install.</string>
+    <string name="update_download_failed">Could not download the update.</string>
+    <string name="cell_description_work">work cell</string>
+    <string name="cell_description_meeting">meeting cell</string>
+</resources>
