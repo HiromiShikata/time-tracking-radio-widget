@@ -49,8 +49,20 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1
+      - name: Decode the release keystore into the runner temp directory
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          printf '%s' "${RELEASE_KEYSTORE_BASE64}" | base64 --decode > "${RUNNER_TEMP}/release.jks"
       - name: Build signed release APK
+        env:
+          RELEASE_KEYSTORE_FILE: ${{ runner.temp }}/release.jks
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
         run: ./gradlew --no-daemon --build-cache assembleRelease
+      - name: Remove the decoded keystore
+        if: always()
+        run: rm -f "${RUNNER_TEMP}/release.jks"
       - name: Publish GitHub release with the APK
         run: |
           set -euo pipefail

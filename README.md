@@ -45,6 +45,17 @@ The endpoint URL must start with `https://`. Project names must be non-empty and
 
 Every 6 hours the app checks the latest GitHub release. When a newer version exists it posts a notification. Tapping the notification downloads the APK and starts the Android package installer. Releases are signed with the same key, so an update installs over the previous version.
 
+## Release signing
+
+Release APKs are signed with a keystore that lives outside the repository. The release workflow needs two repository secrets:
+
+- `RELEASE_KEYSTORE_BASE64`: the keystore file encoded as base64 (for example `base64 -w0 release.jks`).
+- `RELEASE_KEYSTORE_PASSWORD`: the password of the keystore, which is also used for the key. The key alias is `time-tracking-radio-widget`.
+
+The workflow decodes the keystore into the runner's temporary directory and sets `RELEASE_KEYSTORE_FILE` and `RELEASE_KEYSTORE_PASSWORD` only for the build step. Pull request CI builds debug APKs and runs tests and lint, and it does not use these secrets. Locally, `assembleRelease` reads `RELEASE_KEYSTORE_FILE` (a path) and `RELEASE_KEYSTORE_PASSWORD` from the environment, and fails with an error that names any missing variable.
+
+Android only installs an update over an app that was signed with the same key. Losing the release keystore means no future release can update an existing installation: users must uninstall and reinstall the app, and their widget settings are lost.
+
 ## Development
 
 Requirements: JDK 17 and the Android SDK (platform 36).
@@ -56,6 +67,6 @@ Requirements: JDK 17 and the Android SDK (platform 36).
 # the first Gradle build sets core.hooksPath to .githooks, so every push runs lint and unit tests
 ```
 
-Domain logic is plain Kotlin under `domain/`, use cases under `usecase/`, and Android adapters under `adapter/`. The signing key `app/testkey_untrusted.jks` is public on purpose, so that every build and release can be installed over the previous one. Do not use it for anything else.
+Domain logic is plain Kotlin under `domain/`, use cases under `usecase/`, and Android adapters under `adapter/`. Debug builds use Android's default debug signing. `assembleRelease` needs the release signing variables described below and fails without them.
 
 Releases are published by `.github/workflows/release.yml` on every push to `main`. The version name is `1.0.{run number}` and the tag is `v{version name}`.

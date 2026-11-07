@@ -6,6 +6,34 @@ plugins {
 val releaseVersionCode = (System.getenv("APP_VERSION_CODE") ?: "1").toInt()
 val releaseVersionName = System.getenv("APP_VERSION_NAME") ?: "0.0.0"
 
+val RELEASE_KEY_ALIAS = "time-tracking-radio-widget"
+val RELEASE_SIGNING_VARIABLES = listOf("RELEASE_KEYSTORE_FILE", "RELEASE_KEYSTORE_PASSWORD")
+
+fun releaseSigningValue(name: String): String? = System.getenv(name)?.takeIf { it.isNotEmpty() }
+
+val validateReleaseSigning by tasks.registering {
+    description = "Fails unless every release signing input is set in the environment."
+    doLast {
+        val missing = RELEASE_SIGNING_VARIABLES.filter { releaseSigningValue(it) == null }
+        if (missing.isNotEmpty()) {
+            throw GradleException(
+                "Release signing needs environment variable(s): ${missing.joinToString(", ")}. " +
+                    "No unsigned or debug-signed release is built. See the Release signing section of README.md.",
+            )
+        }
+        val keystore = file(releaseSigningValue("RELEASE_KEYSTORE_FILE")!!)
+        if (!keystore.isFile) {
+            throw GradleException("RELEASE_KEYSTORE_FILE does not point to a readable file: ${keystore.path}")
+        }
+    }
+}
+
+afterEvaluate {
+    tasks.named("preReleaseBuild") {
+        dependsOn(validateReleaseSigning)
+    }
+}
+
 android {
     namespace = "com.hiromishikata.timetrackingradio"
     compileSdk = 36
@@ -19,21 +47,18 @@ android {
     }
 
     signingConfigs {
-        create("releaseKey") {
-            storeFile = file("testkey_untrusted.jks")
-            storePassword = "timetrackingradio"
-            keyAlias = "timetrackingradio"
-            keyPassword = "timetrackingradio"
+        create("release") {
+            storeFile = releaseSigningValue("RELEASE_KEYSTORE_FILE")?.let { file(it) }
+            storePassword = releaseSigningValue("RELEASE_KEYSTORE_PASSWORD")
+            keyAlias = RELEASE_KEY_ALIAS
+            keyPassword = releaseSigningValue("RELEASE_KEYSTORE_PASSWORD")
         }
     }
 
     buildTypes {
-        debug {
-            signingConfig = signingConfigs.getByName("releaseKey")
-        }
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("releaseKey")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
