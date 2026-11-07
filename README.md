@@ -67,6 +67,8 @@ Requirements: JDK 17 and the Android SDK (platform 36).
 # the first Gradle build sets core.hooksPath to .githooks, so every push runs lint and unit tests
 ```
 
+CI runs only the unit tests that the change can affect: `scripts/affected-unit-test-args.sh BASE HEAD` prints the Gradle arguments, and `scripts/affected-unit-test-args_test.sh` tests that script. Lint and the debug build always run.
+
 Domain logic is plain Kotlin under `domain/`, use cases under `usecase/`, and Android adapters under `adapter/`. Debug builds use Android's default debug signing. `assembleRelease` needs the release signing variables described below and fails without them.
 
 Releases are published by `.github/workflows/release.yml` on every push to `main`. The version name is `1.0.{run number}` and the tag is `v{version name}`.

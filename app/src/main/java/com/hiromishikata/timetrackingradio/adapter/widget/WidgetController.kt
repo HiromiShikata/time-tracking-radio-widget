@@ -13,6 +13,7 @@ import com.hiromishikata.timetrackingradio.adapter.store.SharedPreferencesKeyVal
 import com.hiromishikata.timetrackingradio.domain.CellKey
 import com.hiromishikata.timetrackingradio.domain.SelectionRepository
 import com.hiromishikata.timetrackingradio.domain.WidgetSettings
+import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
 import com.hiromishikata.timetrackingradio.usecase.WidgetSelectionUpdateUseCase
 import com.hiromishikata.timetrackingradio.usecase.WidgetSnapshotReadUseCase
 import kotlinx.coroutines.sync.withLock
@@ -21,6 +22,9 @@ import java.time.Instant
 class WidgetController(
     private val context: Context,
     private val transportFactory: () -> HttpTransport = { HttpUrlConnectionTransport() },
+    private val publish: (WidgetSettings?, WidgetSnapshot) -> Unit = { settings, snapshot ->
+        publishToAllWidgets(context, settings, snapshot)
+    },
 ) {
     private val store = SharedPreferencesKeyValueStore(
         context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE),
@@ -29,36 +33,46 @@ class WidgetController(
     private val snapshots = KeyValueWidgetSnapshotRepository(store)
 
     fun render() {
-        val views = SelectionWidgetRemoteViewsFactory(context).build(
-            settings = settings.read(),
-            snapshot = snapshots.read(),
-            now = Instant.now(),
-        )
-        val manager = AppWidgetManager.getInstance(context)
-        val ids = manager.getAppWidgetIds(ComponentName(context, SelectionWidgetProvider::class.java))
-        ids.forEach { manager.updateAppWidget(it, views) }
+        publish(settings.read(), snapshots.read())
     }
 
     suspend fun refresh() {
         WidgetScope.mutex.withLock {
             val current = settings.read() ?: return@withLock
-            WidgetSnapshotReadUseCase(selectionsFor(current), snapshots) { Instant.now() }.execute()
-            render()
+            try {
+                WidgetSnapshotReadUseCase(selectionsFor(current), snapshots) { Instant.now() }.execute()
+            } finally {
+                render()
+            }
         }
     }
 
     suspend fun tap(cell: CellKey) {
         WidgetScope.mutex.withLock {
             val current = settings.read() ?: return@withLock
-            WidgetSelectionUpdateUseCase(
-                selections = selectionsFor(current),
-                snapshots = snapshots,
-                afterSendingStarted = { render() },
-            ) { Instant.now() }.execute(cell)
-            render()
+            try {
+                WidgetSelectionUpdateUseCase(
+                    selections = selectionsFor(current),
+                    snapshots = snapshots,
+                    afterSendingStarted = { render() },
+                ) { Instant.now() }.execute(cell)
+            } finally {
+                render()
+            }
         }
     }
 
     private fun selectionsFor(current: WidgetSettings): SelectionRepository =
         HttpSelectionRepository(current.endpointUrl, transportFactory())
+}
+
+private fun publishToAllWidgets(context: Context, settings: WidgetSettings?, snapshot: WidgetSnapshot) {
+    val views = SelectionWidgetRemoteViewsFactory(context).build(
+        settings = settings,
+        snapshot = snapshot,
+        now = Instant.now(),
+    )
+    val manager = AppWidgetManager.getInstance(context)
+    val ids = manager.getAppWidgetIds(ComponentName(context, SelectionWidgetProvider::class.java))
+    ids.forEach { manager.updateAppWidget(it, views) }
 }
