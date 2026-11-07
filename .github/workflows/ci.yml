@@ -2,19 +2,7 @@ name: CI
 
 on:
   push:
-    paths: &build-inputs
-      - "app/**"
-      - "gradle/**"
-      - "gradle.properties"
-      - "settings.gradle.kts"
-      - "build.gradle.kts"
-      - "gradlew"
-      - "gradlew.bat"
-      - ".githooks/**"
-      - ".github/workflows/ci.yml"
-      - ".github/workflows/release.yml"
   pull_request:
-    paths: *build-inputs
 
 permissions:
   contents: read

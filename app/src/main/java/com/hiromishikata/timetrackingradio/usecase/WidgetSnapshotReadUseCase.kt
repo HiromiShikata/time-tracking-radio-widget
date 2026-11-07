@@ -19,6 +19,9 @@ class WidgetSnapshotReadUseCase(
             applySelectionResponse(selections.read(), previous, clock())
         } catch (failure: CommunicationFailedException) {
             markUnreachable(previous)
+        } catch (failure: Throwable) {
+            snapshots.write(previous.copy(sending = null))
+            throw failure
         }
         snapshots.write(next)
         return next

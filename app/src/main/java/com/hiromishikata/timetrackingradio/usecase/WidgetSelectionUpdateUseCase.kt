@@ -21,13 +21,15 @@ class WidgetSelectionUpdateUseCase(
         val request = resolveTapRequest(previous.selection, tapped)
         val sending = previous.copy(sending = request)
         snapshots.write(sending)
-        afterSendingStarted()
-        val next = try {
-            applySelectionResponse(selections.update(request), sending, clock())
+        val finished = try {
+            afterSendingStarted()
+            applySelectionResponse(selections.update(request), sending, clock()).copy(sending = null)
         } catch (failure: CommunicationFailedException) {
-            markUnreachable(sending)
+            markUnreachable(sending).copy(sending = null)
+        } catch (failure: Throwable) {
+            snapshots.write(sending.copy(sending = null))
+            throw failure
         }
-        val finished = next.copy(sending = null)
         snapshots.write(finished)
         return finished
     }
