@@ -10,6 +10,7 @@ import com.hiromishikata.timetrackingradio.domain.SelectionResponse
 import com.hiromishikata.timetrackingradio.domain.WidgetOutcome
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
 
@@ -96,4 +97,15 @@ class WidgetSelectionUpdateUseCaseTest {
             assertEquals(case.name, case.expectedAfter, snapshots.read())
         }
     }
+
+    @Test
+    fun anyUnexpectedFailureClearsTheSendingStateAndIsRethrown() {
+        val selections = FakeSelectionRepository(onUpdate = { throw IllegalStateException("unexpected") })
+        val snapshots = FakeWidgetSnapshotRepository(workSelected)
+        val thrown = runCatching { WidgetSelectionUpdateUseCase(selections, snapshots) { now }.execute(meeting) }
+            .exceptionOrNull()
+        assertTrue("thrown=$thrown", thrown is IllegalStateException)
+        assertEquals(workSelected, snapshots.read())
+    }
 }
+
