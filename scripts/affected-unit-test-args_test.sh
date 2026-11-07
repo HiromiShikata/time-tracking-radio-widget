@@ -37,7 +37,7 @@ setup_repo() {
   write_file app/src/main/res/values/strings.xml '<resources />'
   write_file app/src/main/java/pkg/Foo.kt 'package pkg
 
-data class Foo(val value: String)'
+class Foo(val value: String)'
   write_file app/src/main/java/pkg/Bar.kt 'package pkg
 
 class Bar'
@@ -76,6 +76,39 @@ fun useB(): Int = helperA()'
 class UsesBTest {
     val x = useB()
 }'
+  write_file app/src/main/java/pkg/Settings.kt 'package pkg
+
+val data = 1'
+  write_file app/src/test/java/pkg/DataUserTest.kt 'package pkg
+
+class DataUserTest {
+    val x = data
+}'
+  write_file app/src/main/java/pkg/Solo.kt 'package pkg
+
+class Solo'
+  write_file app/src/test/java/pkg/MultiTest.kt 'package pkg
+
+class MultiTest {
+    val m = Solo()
+}
+
+class OtherTest {
+    val o = 1
+}'
+  write_file app/src/main/java/pkg/Target.kt 'package pkg
+
+class Target'
+  write_file app/src/main/java/pkg/Consumer.kt 'package pkg
+
+import pkg.Target as Alias
+
+fun consume(): Any = Alias()'
+  write_file app/src/test/java/pkg/AliasTest.kt 'package pkg
+
+class AliasTest {
+    val a = consume()
+}'
   git add -A
   git commit -q -m base
   base_sha="$(git rev-parse HEAD)"
@@ -93,6 +126,9 @@ m_bartest() { printf '\n' >> app/src/test/java/pkg/BarTest.kt; }
 m_unused() { printf '\n' >> app/src/main/java/pkg/Unused.kt; }
 m_foo_and_bartest() { m_foo; m_bartest; }
 m_delete_bar() { git rm -q app/src/main/java/pkg/Bar.kt; }
+m_settings() { printf '\n' >> app/src/main/java/pkg/Settings.kt; }
+m_solo() { printf '\n' >> app/src/main/java/pkg/Solo.kt; }
+m_target() { printf '\n' >> app/src/main/java/pkg/Target.kt; }
 m_ext() { printf '\n' >> app/src/main/java/pkg/Ext.kt; }
 m_helper_a() { printf '\n' >> app/src/main/java/pkg/HelperA.kt; }
 m_delete_foo_test() { git rm -q app/src/test/java/pkg/FooTest.kt; }
@@ -138,6 +174,9 @@ run_case "main class deleted" previous 'RUN=full' m_delete_bar
 run_case "generic extension function" previous $'RUN=filtered\n--tests\n*.SummarizeTest' m_ext
 run_case "transitive dependency runs the test of the dependant" previous $'RUN=filtered\n--tests\n*.UsesBTest' m_helper_a
 run_case "deleted test only" previous 'RUN=none' m_delete_foo_test
+run_case "top-level declaration named after a soft keyword" previous $'RUN=filtered\n--tests\n*.DataUserTest' m_settings
+run_case "test file with two classes runs every class" previous $'RUN=filtered\n--tests\n*.MultiTest\n--tests\n*.OtherTest' m_solo
+run_case "aliased import keeps the dependency" previous $'RUN=filtered\n--tests\n*.AliasTest' m_target
 
 echo "${count} cases, ${failures} failures"
 [[ "${failures}" -eq 0 ]]
