@@ -3,6 +3,9 @@ package com.hiromishikata.timetrackingradio.adapter.http
 import com.hiromishikata.timetrackingradio.domain.ActivityKind
 import com.hiromishikata.timetrackingradio.domain.CellKey
 import com.hiromishikata.timetrackingradio.domain.CommunicationFailedException
+import com.hiromishikata.timetrackingradio.domain.DiagnosticRecorder
+import com.hiromishikata.timetrackingradio.domain.endpointKeySecrets
+import com.hiromishikata.timetrackingradio.usecase.FakeDiagnosticLogRepository
 import com.hiromishikata.timetrackingradio.domain.SelectionRequest
 import com.hiromishikata.timetrackingradio.domain.SelectionResponse
 import okhttp3.mockwebserver.MockResponse
@@ -12,6 +15,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.time.Instant
 
 class HttpNetworkContractTest {
     private lateinit var server: MockWebServer
@@ -73,5 +77,18 @@ class HttpNetworkContractTest {
         server.enqueue(MockResponse().setResponseCode(500))
         val thrown = runCatching { HttpSelectionRepository(endpoint(), transport).read() }.exceptionOrNull()
         assertTrue("thrown=$thrown", thrown is CommunicationFailedException)
+    }
+
+    @Test
+    fun aRelativeRedirectLocationIsFollowedAndItsTokenIsNotRecorded() {
+        server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", "/echo?token=SECRET123"))
+        server.enqueue(MockResponse().setResponseCode(200).setBody(okBody))
+        val log = FakeDiagnosticLogRepository()
+        val recorder = DiagnosticRecorder(log, endpointKeySecrets(endpoint())) { Instant.EPOCH }
+        val response = HttpSelectionRepository(endpoint(), DiagnosticHttpTransport(transport, endpoint(), recorder), recorder).read()
+        assertEquals(SelectionResponse.Accepted(null), response)
+        server.takeRequest()
+        assertEquals("/echo?token=SECRET123", server.takeRequest().path)
+        assertTrue(log.recorded.none { it.detail.contains("SECRET123") })
     }
 }

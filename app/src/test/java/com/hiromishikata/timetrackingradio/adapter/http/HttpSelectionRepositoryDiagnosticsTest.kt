@@ -9,6 +9,7 @@ import com.hiromishikata.timetrackingradio.usecase.FakeDiagnosticLogRepository
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.io.IOException
+import java.net.MalformedURLException
 import java.time.Instant
 
 class HttpSelectionRepositoryDiagnosticsTest {
@@ -23,6 +24,21 @@ class HttpSelectionRepositoryDiagnosticsTest {
         )
         runCatching { repository.update(SelectionRequest.Select(CellKey("project-a", ActivityKind.WORK))) }
         return log.recorded.map { it.type.code to it.detail }
+    }
+
+    @Test
+    fun aFailureMessageCarryingAQueryIsRecordedWithoutThatQuery() {
+        val log = FakeDiagnosticLogRepository()
+        val repository = HttpSelectionRepository(
+            endpoint,
+            FakeHttpTransport(ArrayDeque<() -> HttpResponse>(listOf({ throw MalformedURLException("no protocol: /echo?token=SECRET123") }))),
+            DiagnosticRecorder(log, endpointKeySecrets(endpoint)) { Instant.EPOCH },
+        )
+        runCatching { repository.read() }
+        assertEquals(
+            listOf("exception" to "MalformedURLException: no protocol: /echo?***"),
+            log.recorded.map { it.type.code to it.detail },
+        )
     }
 
     @Test

@@ -6,8 +6,13 @@ import com.hiromishikata.timetrackingradio.domain.DiagnosticsUploadResult
 import com.hiromishikata.timetrackingradio.domain.DIAGNOSTICS_UPLOAD_LIMIT
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.thread
 
 class DiagnosticUploadUseCaseTest {
     private val clock = { Instant.parse("2026-11-08T00:05:00Z") }
@@ -56,6 +61,29 @@ class DiagnosticUploadUseCaseTest {
         useCase(log, uploads).execute()
         assertEquals("failed: IllegalStateException: boom", log.recorded.last().detail)
         assertFalse(log.recorded.first().delivered)
+    }
+
+    @Test
+    fun aSecondUploadStartedWhileAnotherIsInFlightSendsNothing() {
+        val log = FakeDiagnosticLogRepository()
+        log.append(Instant.EPOCH, DiagnosticEventType.TAP_RECEIVED, "first")
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val calls = AtomicInteger()
+        val uploads = FakeDiagnosticsUploadRepository {
+            if (calls.incrementAndGet() == 1) {
+                started.countDown()
+                release.await(5, TimeUnit.SECONDS)
+            }
+            DiagnosticsUploadResult.Delivered
+        }
+        val inFlight = thread { useCase(log, uploads).execute() }
+        assertTrue("the first upload started", started.await(5, TimeUnit.SECONDS))
+        useCase(log, uploads).execute()
+        release.countDown()
+        inFlight.join(5_000)
+        assertEquals(1, uploads.calls.size)
+        assertTrue(log.recorded.first().delivered)
     }
 
     @Test

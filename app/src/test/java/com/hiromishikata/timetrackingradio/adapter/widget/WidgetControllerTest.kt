@@ -103,6 +103,41 @@ class WidgetControllerTest {
     }
 
     @Test
+    fun aTapThatFailsUnexpectedlyStillUploadsItsDiagnostics() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val transport = FakeHttpTransport(
+            ArrayDeque<() -> HttpResponse>(
+                listOf(
+                    { throw IllegalStateException("unexpected") },
+                    { HttpResponse(200, null, """{"result":"ok","accepted":1}""") },
+                ),
+            ),
+        )
+        val thrown = runCatching { runBlocking { controller(transport).tap(meeting) } }.exceptionOrNull()
+        assertTrue("thrown=$thrown", thrown is IllegalStateException)
+        assertTrue(transport.requests.last().body.orEmpty().startsWith("{\"diagnostics\":["))
+        assertTrue(KeyValueDiagnosticLogRepository(store).readAll().single { it.type == DiagnosticEventType.TAP_RECEIVED }.delivered)
+    }
+
+    @Test
+    fun aRefreshIsFollowedByADiagnosticsPost() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val transport = FakeHttpTransport(
+            ArrayDeque<() -> HttpResponse>(
+                listOf(
+                    { HttpResponse(200, null, """{"result":"ok","selection":null}""") },
+                    { HttpResponse(200, null, """{"result":"ok","accepted":1}""") },
+                ),
+            ),
+        )
+        runBlocking { controller(transport).refresh() }
+        assertEquals(listOf("GET", "POST"), transport.requests.map { it.method })
+        val upload = transport.requests.last().body.orEmpty()
+        assertTrue(upload.startsWith("{\"diagnostics\":["))
+        assertTrue(upload.contains("\"event\":\"widget_update_requested\""))
+    }
+
+    @Test
     fun aTapWithoutSettingsRecordsTheTapAndSendsNothing() {
         val transport = FakeHttpTransport(ArrayDeque())
         runBlocking { controller(transport).tap(meeting) }
