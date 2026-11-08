@@ -87,4 +87,30 @@ class WidgetWorkSchedulerTest {
         )
         assertEquals(second, widgetSnapshots(context).read().selection?.cell)
     }
+
+    @Test
+    fun aTapWhoseSelectionCallThrowsDoesNotDropTheTapQueuedAfterIt() {
+        val transport = EchoSelectionTransport { request ->
+            if (request.method == "POST" && selectedProjectOf(request) == first.project) {
+                throw IllegalStateException("unexpected")
+            }
+        }
+        WidgetSelectionWorker.controllerFactory = { WidgetController(it, { transport }, { transport }) { _, _ -> } }
+        WidgetWorkScheduler.enqueueTap(context, first)
+        WidgetWorkScheduler.enqueueTap(context, second)
+        val deadline = System.currentTimeMillis() + 5_000
+        while (uniqueWorkInfos(context, WidgetSelectionWorker.UNIQUE_WORK_NAME).size < 2) {
+            check(System.currentTimeMillis() < deadline) { "both taps were not enqueued" }
+            Thread.sleep(10)
+        }
+        awaitWorkFinished(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
+        val infos = uniqueWorkInfos(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
+        assertEquals(2, infos.size)
+        assertEquals(setOf(WorkInfo.State.SUCCEEDED), infos.map { it.state }.toSet())
+        assertEquals(
+            listOf("project-a", "project-b"),
+            transport.requests.filter { it.method == "POST" }.map { selectedProjectOf(it) },
+        )
+        assertEquals(second, widgetSnapshots(context).read().selection?.cell)
+    }
 }

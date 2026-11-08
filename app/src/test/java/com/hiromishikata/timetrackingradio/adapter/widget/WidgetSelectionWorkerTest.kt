@@ -86,10 +86,10 @@ class WidgetSelectionWorkerTest {
     }
 
     @Test
-    fun anUnexpectedFailureOfTheSelectionCallClearsTheSendingStateAndFailsTheWork() {
+    fun anUnexpectedFailureOfTheSelectionCallClearsTheSendingStateAndSucceedsSoChainedWorkStillRuns() {
         transport = EchoSelectionTransport { throw IllegalStateException("unexpected") }
         val result = runWorker(tapInput)
-        assertTrue("result=$result", result is ListenableWorker.Result.Failure)
+        assertTrue("result=$result", result is ListenableWorker.Result.Success)
         assertTrue("the sending state was rendered first", rendered.any { it.sending != null })
         assertNull(widgetSnapshots(context).read().sending)
         assertNull("the last rendered screen still shows a sending cell", rendered.last().sending)

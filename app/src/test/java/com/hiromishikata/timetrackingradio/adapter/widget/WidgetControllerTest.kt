@@ -31,6 +31,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.io.IOException
 import java.time.Instant
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
@@ -276,5 +277,26 @@ class WidgetControllerTest {
             transport.releaseSelection.countDown()
             first.join(5_000)
         }
+    }
+
+    @Test
+    fun aQueuedTapKeepsItsSendingStateWhenAnEarlierTapCompletes() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val transport = GatedSelectionTransport(
+            """{"result":"ok","selection":{"project":"project-a","activity":"meeting","since":"2026-11-07T08:39:00Z"}}""",
+        )
+        val queued = CellKey("project-b", ActivityKind.WORK)
+        val rendered = CopyOnWriteArrayList<WidgetSnapshot>()
+        val publish: (WidgetSettings?, WidgetSnapshot) -> Unit = { _, snapshot -> rendered += snapshot }
+        val first = thread { runBlocking { WidgetController(context, { transport }, { transport }, publish).performTap(meeting) } }
+        try {
+            assertTrue("the first selection request started", transport.selectionStarted.await(5, TimeUnit.SECONDS))
+            WidgetController(context, { transport }, { transport }, publish).acceptTap(queued)
+        } finally {
+            transport.releaseSelection.countDown()
+            first.join(5_000)
+        }
+        assertEquals("the queued tap is still sending", SelectionRequest.Select(queued), rendered.last().sending)
+        assertEquals(SelectionRequest.Select(queued), KeyValueWidgetSnapshotRepository(store).read().sending)
     }
 }
