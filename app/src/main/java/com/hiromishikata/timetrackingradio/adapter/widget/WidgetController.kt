@@ -10,6 +10,7 @@ import com.hiromishikata.timetrackingradio.adapter.http.HttpSelectionRepository
 import com.hiromishikata.timetrackingradio.adapter.http.HttpTransport
 import com.hiromishikata.timetrackingradio.adapter.http.HttpUrlConnectionTransport
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueDiagnosticLogRepository
+import com.hiromishikata.timetrackingradio.adapter.store.KeyValueQueuedTapRepository
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueWidgetSettingsRepository
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueWidgetSnapshotRepository
 import com.hiromishikata.timetrackingradio.adapter.store.SETTINGS_PREFERENCES_NAME
@@ -44,6 +45,7 @@ class WidgetController(
     private val settings = KeyValueWidgetSettingsRepository(store)
     private val snapshots = KeyValueWidgetSnapshotRepository(store)
     private val diagnosticLog = KeyValueDiagnosticLogRepository(store)
+    private val queuedTaps = KeyValueQueuedTapRepository(store)
 
     fun render() {
         publish(settings.read(), snapshots.read())
@@ -56,6 +58,7 @@ class WidgetController(
             "project=${cell.project}, activity=${cell.activity.code}",
         )
         if (loaded != null) {
+            queuedTaps.write(cell)
             val previous = snapshots.read()
             snapshots.write(previous.copy(sending = resolveTapRequest(previous.selection, cell)))
             render()
@@ -73,6 +76,7 @@ class WidgetController(
                         afterSendingStarted = { render() },
                     ) { Instant.now() }.execute(cell)
                 } finally {
+                    keepQueuedSending(cell)
                     render()
                 }
             }
@@ -94,8 +98,19 @@ class WidgetController(
     }
 
     fun clearSending() {
+        queuedTaps.write(null)
         snapshots.write(snapshots.read().copy(sending = null))
         render()
+    }
+
+    private fun keepQueuedSending(completed: CellKey) {
+        val queued = queuedTaps.read() ?: return
+        if (queued == completed) {
+            queuedTaps.write(null)
+            return
+        }
+        val current = snapshots.read()
+        snapshots.write(current.copy(sending = resolveTapRequest(current.selection, queued)))
     }
 
     fun uploadDiagnostics() {

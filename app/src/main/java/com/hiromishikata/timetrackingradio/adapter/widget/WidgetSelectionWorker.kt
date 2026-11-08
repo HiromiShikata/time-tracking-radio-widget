@@ -42,7 +42,7 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
         } catch (failure: Exception) {
             logWidgetWorkFailure(failure)
             controller.clearSending()
-            Result.failure()
+            Result.success()
         }
     }
 
