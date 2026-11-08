@@ -84,7 +84,7 @@ class SelectionWidgetProviderTest {
         KeyValueWidgetSettingsRepository(widgetPreferences(context)).write(WIDGET_TEST_SETTINGS)
         val forbidden = ForbiddenTransport()
         val rendered = mutableListOf<WidgetSnapshot>()
-        SelectionWidgetProvider.controllerFactory = { WidgetController(it, { forbidden }, { forbidden }) { _, snapshot -> rendered += snapshot } }
+        SelectionWidgetProvider.controllerFactory = { WidgetController(it, { forbidden }, { forbidden }, publish = { _, snapshot -> rendered += snapshot }) }
         SelectionWidgetProvider().onReceive(context, tapIntent("project-a", "meeting"))
         assertEquals(0, forbidden.calls)
         assertTrue(rendered.any { it.sending == SelectionRequest.Select(CellKey("project-a", ActivityKind.MEETING)) })
@@ -100,7 +100,7 @@ class SelectionWidgetProviderTest {
     fun aWidgetUpdateRendersAndEnqueuesARefreshWithoutNetwork() {
         KeyValueWidgetSettingsRepository(widgetPreferences(context)).write(WIDGET_TEST_SETTINGS)
         val forbidden = ForbiddenTransport()
-        SelectionWidgetProvider.controllerFactory = { WidgetController(it, { forbidden }, { forbidden }) { _, _ -> } }
+        SelectionWidgetProvider.controllerFactory = { WidgetController(it, { forbidden }, { forbidden }, publish = { _, _ -> }) }
         SelectionWidgetProvider().onUpdate(context, AppWidgetManager.getInstance(context), IntArray(0))
         assertEquals(0, forbidden.calls)
         assertEquals(1, uniqueWorkInfos(context, WidgetSelectionWorker.UNIQUE_WORK_NAME).size)

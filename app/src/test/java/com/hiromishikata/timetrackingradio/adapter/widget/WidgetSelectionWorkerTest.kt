@@ -24,6 +24,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.time.Instant
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = TestApplication::class)
@@ -44,7 +46,7 @@ class WidgetSelectionWorkerTest {
         KeyValueWidgetSettingsRepository(widgetPreferences(context)).write(WIDGET_TEST_SETTINGS)
         installHarmlessWidgetWorkFactories()
         transport = EchoSelectionTransport()
-        WidgetSelectionWorker.controllerFactory = { WidgetController(it, { transport }, { EchoSelectionTransport() }) { _, snapshot -> rendered += snapshot } }
+        WidgetSelectionWorker.controllerFactory = { WidgetController(it, { transport }, { EchoSelectionTransport() }, publish = { _, snapshot -> rendered += snapshot }) }
     }
 
     @After
@@ -83,6 +85,43 @@ class WidgetSelectionWorkerTest {
     fun aSucceededTapEnqueuesTheDiagnosticsUploadUnderItsOwnName() {
         runWorker(tapInput)
         assertEquals(1, uniqueWorkInfos(context, WidgetDiagnosticsUploadWorker.UNIQUE_WORK_NAME).size)
+    }
+
+    @Test
+    fun aFailedTapStillEnqueuesTheDiagnosticsUpload() {
+        transport = EchoSelectionTransport { throw IllegalStateException("unexpected") }
+        runWorker(tapInput)
+        assertTrue(
+            "no diagnostics upload was enqueued after the failed tap",
+            uniqueWorkInfos(context, WidgetDiagnosticsUploadWorker.UNIQUE_WORK_NAME).isNotEmpty(),
+        )
+    }
+
+    @Test
+    fun aStoppedTapDoesNotEnqueueTheDiagnosticsUpload() {
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        transport = EchoSelectionTransport {
+            started.countDown()
+            release.await(10, TimeUnit.SECONDS)
+        }
+        val worker = TestListenableWorkerBuilder<WidgetSelectionWorker>(context).setInputData(tapInput).build()
+        val outcome = worker.startWork()
+        try {
+            assertTrue("the selection request started", started.await(5, TimeUnit.SECONDS))
+            worker.onStopped()
+        } finally {
+            release.countDown()
+        }
+        val deadline = System.currentTimeMillis() + 5_000
+        while (!outcome.isDone) {
+            check(System.currentTimeMillis() < deadline) { "the stopped work did not finish" }
+            Thread.sleep(10)
+        }
+        assertTrue(
+            "a stopped tap enqueued a diagnostics upload",
+            uniqueWorkInfos(context, WidgetDiagnosticsUploadWorker.UNIQUE_WORK_NAME).isEmpty(),
+        )
     }
 
     @Test

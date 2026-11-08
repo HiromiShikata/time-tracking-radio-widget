@@ -68,7 +68,7 @@ class WidgetWorkSchedulerTest {
                 release.await(10, TimeUnit.SECONDS)
             }
         }
-        WidgetSelectionWorker.controllerFactory = { WidgetController(it, { transport }, { transport }) { _, _ -> } }
+        WidgetSelectionWorker.controllerFactory = { WidgetController(it, { transport }, { transport }, publish = { _, _ -> }) }
         val firstEnqueue = thread { WidgetWorkScheduler.enqueueTap(context, first) }
         try {
             assertTrue("the first tap started", started.await(5, TimeUnit.SECONDS))
@@ -95,7 +95,7 @@ class WidgetWorkSchedulerTest {
                 throw IllegalStateException("unexpected")
             }
         }
-        WidgetSelectionWorker.controllerFactory = { WidgetController(it, { transport }, { transport }) { _, _ -> } }
+        WidgetSelectionWorker.controllerFactory = { WidgetController(it, { transport }, { transport }, publish = { _, _ -> }) }
         WidgetWorkScheduler.enqueueTap(context, first)
         WidgetWorkScheduler.enqueueTap(context, second)
         val deadline = System.currentTimeMillis() + 5_000

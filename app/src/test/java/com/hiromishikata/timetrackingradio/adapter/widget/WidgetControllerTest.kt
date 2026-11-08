@@ -12,6 +12,7 @@ import com.hiromishikata.timetrackingradio.adapter.store.KeyValueWidgetSnapshotR
 import com.hiromishikata.timetrackingradio.adapter.store.SETTINGS_PREFERENCES_NAME
 import com.hiromishikata.timetrackingradio.adapter.store.SharedPreferencesKeyValueStore
 import com.hiromishikata.timetrackingradio.domain.ActivityKind
+import com.hiromishikata.timetrackingradio.domain.CellVisual
 import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
 import com.hiromishikata.timetrackingradio.domain.CellKey
 import com.hiromishikata.timetrackingradio.domain.Selection
@@ -19,6 +20,7 @@ import com.hiromishikata.timetrackingradio.domain.SelectionRequest
 import com.hiromishikata.timetrackingradio.domain.WidgetOutcome
 import com.hiromishikata.timetrackingradio.domain.WidgetSettings
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
+import com.hiromishikata.timetrackingradio.domain.resolveCellVisual
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -43,9 +45,27 @@ class WidgetControllerTest {
     private val store = SharedPreferencesKeyValueStore(context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE))
     private val settings = WidgetSettings("https://example.com/exec?key=example", listOf("project-a", "project-b"))
     private val meeting = CellKey("project-a", ActivityKind.MEETING)
+    private val work = CellKey("project-b", ActivityKind.WORK)
     private val since = Instant.parse("2026-11-07T08:39:00Z")
+    private val acceptedAt = Instant.parse("2026-11-07T08:00:00Z")
+    private val selectedMeetingBody = """{"result":"ok","selection":{"project":"project-a","activity":"meeting","since":"2026-11-07T08:39:00Z"}}"""
+    private val clearedBody = """{"result":"ok","selection":null}"""
 
-    private fun controller(transport: FakeHttpTransport) = WidgetController(context, { transport }, { transport }) { _, _ -> }
+    private fun controller(transport: FakeHttpTransport) = WidgetController(context, { transport }, { transport }, publish = { _, _ -> })
+
+    private fun recordingController(
+        transport: HttpTransport,
+        rendered: MutableList<WidgetSnapshot>,
+        clock: () -> Instant = { Instant.now() },
+    ) = WidgetController(
+        context = context,
+        transportFactory = { transport },
+        uploadTransportFactory = { transport },
+        publish = { _, snapshot -> rendered += snapshot },
+        clock = clock,
+    )
+
+    private data class RingAgeCase(val name: String, val minutesAfterAcceptance: Long, val expectedSending: SelectionRequest?)
 
     private data class AcceptTapCase(
         val name: String,
@@ -108,7 +128,7 @@ class WidgetControllerTest {
         KeyValueWidgetSettingsRepository(store).write(settings)
         val rendered = mutableListOf<WidgetSnapshot>()
         val transport = FakeHttpTransport(ArrayDeque(listOf({ throw IllegalStateException("unexpected") })))
-        val controller = WidgetController(context, { transport }, { transport }) { _, snapshot -> rendered += snapshot }
+        val controller = WidgetController(context, { transport }, { transport }, publish = { _, snapshot -> rendered += snapshot })
         val thrown = runCatching { runBlocking { controller.performTap(meeting) } }.exceptionOrNull()
         assertTrue("thrown=$thrown", thrown is IllegalStateException)
         assertTrue("the dashed ring was never rendered", rendered.any { it.sending != null })
@@ -182,7 +202,7 @@ class WidgetControllerTest {
     fun acceptTapRecordsTheTapAsAnUndeliveredEntryWithoutNetwork() {
         KeyValueWidgetSettingsRepository(store).write(settings)
         val transport = ForbiddenTransport()
-        WidgetController(context, { transport }, { transport }) { _, _ -> }.acceptTap(meeting)
+        WidgetController(context, { transport }, { transport }, publish = { _, _ -> }).acceptTap(meeting)
         val entry = KeyValueDiagnosticLogRepository(store).readAll().single { it.type == DiagnosticEventType.TAP_RECEIVED }
         assertEquals("project=project-a, activity=meeting", entry.detail)
         assertFalse(entry.delivered)
@@ -206,7 +226,7 @@ class WidgetControllerTest {
             KeyValueWidgetSnapshotRepository(store).write(WidgetSnapshot(case.previous, since, WidgetOutcome.Settled, null))
             val transport = ForbiddenTransport()
             val rendered = mutableListOf<WidgetSnapshot>()
-            WidgetController(context, { transport }, { transport }) { _, snapshot -> rendered += snapshot }.acceptTap(case.tapped)
+            WidgetController(context, { transport }, { transport }, publish = { _, snapshot -> rendered += snapshot }).acceptTap(case.tapped)
             val stored = KeyValueWidgetSnapshotRepository(store).read()
             assertEquals("case=${case.name}", 0, transport.calls)
             assertEquals("case=${case.name}", case.expectedSending, stored.sending)
@@ -226,9 +246,9 @@ class WidgetControllerTest {
             KeyValueWidgetSnapshotRepository(store).write(WidgetSnapshot(Selection(meeting, since), since, WidgetOutcome.Settled, case.sending))
             val transport = ForbiddenTransport()
             val rendered = mutableListOf<WidgetSnapshot>()
-            val controller = WidgetController(context, { transport }, { transport }) { _, snapshot -> rendered += snapshot }
-            controller.clearSending()
-            controller.clearSending()
+            val controller = WidgetController(context, { transport }, { transport }, publish = { _, snapshot -> rendered += snapshot })
+            controller.clearSending(null)
+            controller.clearSending(null)
             val stored = KeyValueWidgetSnapshotRepository(store).read()
             assertNull("case=${case.name}", stored.sending)
             assertEquals("case=${case.name}", Selection(meeting, since), stored.selection)
@@ -298,5 +318,112 @@ class WidgetControllerTest {
         }
         assertEquals("the queued tap is still sending", SelectionRequest.Select(queued), rendered.last().sending)
         assertEquals(SelectionRequest.Select(queued), KeyValueWidgetSnapshotRepository(store).read().sending)
+    }
+
+    @Test
+    fun aRefreshKeepsTheRingOfAnAcceptedTap() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val rendered = mutableListOf<WidgetSnapshot>()
+        val transport = FakeHttpTransport(ArrayDeque<() -> HttpResponse>(listOf({ HttpResponse(200, null, clearedBody) })))
+        val controller = recordingController(transport, rendered)
+        controller.acceptTap(work)
+        runBlocking { controller.refresh() }
+        assertEquals(SelectionRequest.Select(work), KeyValueWidgetSnapshotRepository(store).read().sending)
+        assertEquals(SelectionRequest.Select(work), rendered.last().sending)
+    }
+
+    @Test
+    fun aRepeatedTapKeepsItsRingUntilEachOfItsTwoWorksCompletes() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val transport = FakeHttpTransport(
+            ArrayDeque<() -> HttpResponse>(
+                listOf({ HttpResponse(200, null, selectedMeetingBody) }, { HttpResponse(200, null, clearedBody) }),
+            ),
+        )
+        val controller = controller(transport)
+        controller.acceptTap(meeting)
+        controller.acceptTap(meeting)
+        runBlocking { controller.performTap(meeting) }
+        val afterFirst = KeyValueWidgetSnapshotRepository(store).read()
+        assertEquals("after the first work the ring is still on the cell", CellVisual.SENDING, resolveCellVisual(meeting, afterFirst.selection, afterFirst.sending))
+        runBlocking { controller.performTap(meeting) }
+        assertNull("after the second work the ring is cleared", KeyValueWidgetSnapshotRepository(store).read().sending)
+    }
+
+    @Test
+    fun aFailedTapRemovesOnlyItsOwnEntryFromTheRing() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val rendered = mutableListOf<WidgetSnapshot>()
+        val transport = FakeHttpTransport(ArrayDeque<() -> HttpResponse>(listOf({ throw IllegalStateException("unexpected") })))
+        val controller = recordingController(transport, rendered)
+        controller.acceptTap(meeting)
+        controller.acceptTap(work)
+        val thrown = runCatching { runBlocking { controller.performTap(meeting) } }.exceptionOrNull()
+        assertTrue("thrown=$thrown", thrown is IllegalStateException)
+        controller.clearSending(meeting)
+        assertEquals(SelectionRequest.Select(work), KeyValueWidgetSnapshotRepository(store).read().sending)
+        assertEquals(SelectionRequest.Select(work), rendered.last().sending)
+    }
+
+    @Test
+    fun aTapAcceptedWhileAnEarlierTapIsSendingKeepsItsRingAndTheEarlierSelection() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val transport = GatedSelectionTransport(selectedMeetingBody)
+        val rendered = CopyOnWriteArrayList<WidgetSnapshot>()
+        val first = thread { runBlocking { recordingController(transport, rendered).performTap(meeting) } }
+        try {
+            assertTrue("the earlier selection request started", transport.selectionStarted.await(5, TimeUnit.SECONDS))
+            recordingController(transport, rendered).acceptTap(work)
+        } finally {
+            transport.releaseSelection.countDown()
+            first.join(5_000)
+        }
+        val stored = KeyValueWidgetSnapshotRepository(store).read()
+        assertEquals(Selection(meeting, since), stored.selection)
+        assertEquals(SelectionRequest.Select(work), stored.sending)
+    }
+
+    @Test
+    fun anAcceptedTapStopsDerivingItsRingOnceOlderThanTheAgeBound() {
+        val cases = listOf(
+            RingAgeCase("one minute after acceptance, within the ten-minute age bound, the ring is shown", 1, SelectionRequest.Select(work)),
+            RingAgeCase("eleven minutes after acceptance, beyond the ten-minute age bound, no ring is derived", 11, null),
+        )
+        cases.forEach { case ->
+            context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE).edit().clear().commit()
+            KeyValueWidgetSettingsRepository(store).write(settings)
+            var now = acceptedAt
+            val rendered = mutableListOf<WidgetSnapshot>()
+            val transport = ForbiddenTransport()
+            val controller = recordingController(transport, rendered) { now }
+            controller.acceptTap(work)
+            now = acceptedAt.plusSeconds(case.minutesAfterAcceptance * 60)
+            controller.render()
+            assertEquals("case=${case.name}", case.expectedSending, rendered.last().sending)
+            assertEquals("case=${case.name}", 0, transport.calls)
+        }
+    }
+
+    @Test
+    fun clearSendingWithoutACellKeepsTheRingOfTheAcceptedTap() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val rendered = mutableListOf<WidgetSnapshot>()
+        val controller = recordingController(ForbiddenTransport(), rendered)
+        controller.acceptTap(work)
+        controller.clearSending(null)
+        assertEquals(SelectionRequest.Select(work), KeyValueWidgetSnapshotRepository(store).read().sending)
+        assertEquals(SelectionRequest.Select(work), rendered.last().sending)
+    }
+
+    @Test
+    fun clearSendingWithACellRemovesOneMatchingEntryPerCall() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val controller = recordingController(ForbiddenTransport(), mutableListOf())
+        controller.acceptTap(meeting)
+        controller.acceptTap(meeting)
+        controller.clearSending(meeting)
+        assertEquals(SelectionRequest.Select(meeting), KeyValueWidgetSnapshotRepository(store).read().sending)
+        controller.clearSending(meeting)
+        assertNull(KeyValueWidgetSnapshotRepository(store).read().sending)
     }
 }

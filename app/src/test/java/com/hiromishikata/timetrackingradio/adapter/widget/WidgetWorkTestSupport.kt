@@ -76,9 +76,9 @@ internal fun awaitWorkFinished(context: Context, uniqueWorkName: String, timeout
 }
 
 internal fun installHarmlessWidgetWorkFactories() {
-    SelectionWidgetProvider.controllerFactory = { WidgetController(it, { EchoSelectionTransport() }, { EchoSelectionTransport() }) { _, _ -> } }
-    WidgetSelectionWorker.controllerFactory = { WidgetController(it, { EchoSelectionTransport() }, { EchoSelectionTransport() }) { _, _ -> } }
-    WidgetDiagnosticsUploadWorker.controllerFactory = { WidgetController(it, { EchoSelectionTransport() }, { EchoSelectionTransport() }) { _, _ -> } }
+    SelectionWidgetProvider.controllerFactory = { WidgetController(it, { EchoSelectionTransport() }, { EchoSelectionTransport() }, publish = { _, _ -> }) }
+    WidgetSelectionWorker.controllerFactory = { WidgetController(it, { EchoSelectionTransport() }, { EchoSelectionTransport() }, publish = { _, _ -> }) }
+    WidgetDiagnosticsUploadWorker.controllerFactory = { WidgetController(it, { EchoSelectionTransport() }, { EchoSelectionTransport() }, publish = { _, _ -> }) }
 }
 
 internal fun restoreDefaultWidgetFactories() {
