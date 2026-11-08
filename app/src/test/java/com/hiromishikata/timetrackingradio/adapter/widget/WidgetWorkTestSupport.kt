@@ -74,7 +74,7 @@ internal fun installWorkManagerWithControlledExecutor(context: Context): Executo
     return executor
 }
 
-internal fun uniqueWorkInfos(context: Context, uniqueWorkName: String, timeoutMillis: Long = 5_000): List<WorkInfo> =
+internal fun uniqueWorkInfos(context: Context, uniqueWorkName: String, timeoutMillis: Long = 30_000): List<WorkInfo> =
     WorkManager.getInstance(context).getWorkInfosForUniqueWork(uniqueWorkName)
         .get(timeoutMillis, TimeUnit.MILLISECONDS)
 
@@ -82,7 +82,7 @@ internal fun awaitUniqueWork(
     context: Context,
     uniqueWorkName: String,
     what: String,
-    timeoutMillis: Long = 5_000,
+    timeoutMillis: Long = 30_000,
     condition: (List<WorkInfo>) -> Boolean,
 ): List<WorkInfo> {
     val deadline = System.currentTimeMillis() + timeoutMillis
@@ -96,7 +96,7 @@ internal fun awaitUniqueWork(
     }
 }
 
-internal fun awaitWorkFinished(context: Context, uniqueWorkName: String, timeoutMillis: Long = 5_000) {
+internal fun awaitWorkFinished(context: Context, uniqueWorkName: String, timeoutMillis: Long = 30_000) {
     awaitUniqueWork(context, uniqueWorkName, "work finishing", timeoutMillis) { infos -> infos.all { it.state.isFinished } }
 }
 

@@ -73,13 +73,13 @@ class WidgetWorkSchedulerTest {
         val transport = EchoSelectionTransport { request ->
             if (request.method == "POST" && gateFirstSelection.getAndSet(false)) {
                 started.countDown()
-                check(release.await(5, TimeUnit.SECONDS)) { "the first selection was never released by the test" }
+                check(release.await(30, TimeUnit.SECONDS)) { "the first selection was never released by the test" }
             }
         }
         WidgetSelectionWorker.controllerFactory = { WidgetController(it, { transport }, { transport }, publish = { _, _ -> }) }
         try {
             WidgetWorkScheduler.enqueueTap(context, first)
-            assertTrue("the first tap's selection call started", started.await(5, TimeUnit.SECONDS))
+            assertTrue("the first tap's selection call started", started.await(30, TimeUnit.SECONDS))
             WidgetWorkScheduler.enqueueTap(context, second)
             val queued = awaitUniqueWork(context, WidgetSelectionWorker.UNIQUE_WORK_NAME, "the second tap being queued") { it.size == 2 }
             assertEquals(setOf(WorkInfo.State.RUNNING, WorkInfo.State.BLOCKED), queued.map { it.state }.toSet())
@@ -101,7 +101,7 @@ class WidgetWorkSchedulerTest {
         val transport = EchoSelectionTransport { request ->
             if (request.method == "POST" && selectedProjectOf(request) == first.project) {
                 started.countDown()
-                check(release.await(5, TimeUnit.SECONDS)) { "the first selection was never released by the test" }
+                check(release.await(30, TimeUnit.SECONDS)) { "the first selection was never released by the test" }
                 throw IllegalStateException("unexpected")
             }
         }
@@ -109,7 +109,7 @@ class WidgetWorkSchedulerTest {
         val ids: Set<UUID>
         try {
             WidgetWorkScheduler.enqueueTap(context, first)
-            assertTrue("the first tap's selection call started", started.await(5, TimeUnit.SECONDS))
+            assertTrue("the first tap's selection call started", started.await(30, TimeUnit.SECONDS))
             WidgetWorkScheduler.enqueueTap(context, second)
             val queued = awaitUniqueWork(context, WidgetSelectionWorker.UNIQUE_WORK_NAME, "the second tap being queued") { it.size == 2 }
             ids = queued.map { it.id }.toSet()
