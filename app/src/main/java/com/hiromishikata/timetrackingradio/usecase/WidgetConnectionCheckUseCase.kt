@@ -6,6 +6,7 @@ import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
 import com.hiromishikata.timetrackingradio.domain.DiagnosticSink
 import com.hiromishikata.timetrackingradio.domain.SelectionRepository
 import com.hiromishikata.timetrackingradio.domain.SelectionResponse
+import com.hiromishikata.timetrackingradio.domain.redactUrlQueries
 import com.hiromishikata.timetrackingradio.domain.scrubSecrets
 
 class WidgetConnectionCheckUseCase(
@@ -18,7 +19,7 @@ class WidgetConnectionCheckUseCase(
             when (val response = selections.read()) {
                 is SelectionResponse.Accepted -> ConnectionCheckResult.Connected(response.selection)
                 is SelectionResponse.Rejected ->
-                    ConnectionCheckResult.ServerRejected(scrubSecrets(response.message, secrets))
+                    ConnectionCheckResult.ServerRejected(redactUrlQueries(scrubSecrets(response.message, secrets)))
             }
         } catch (failure: CommunicationFailedException) {
             ConnectionCheckResult.Failed(scrubSecrets(failure.message.orEmpty(), secrets))

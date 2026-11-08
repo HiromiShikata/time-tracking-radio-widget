@@ -92,7 +92,13 @@ fun scrubSecrets(text: String, secrets: Set<String>): String =
 
 fun hostOf(url: String): String = runCatching { URI(url).host }.getOrNull() ?: "unknown"
 
-fun describeFailure(failure: Throwable): String = "${failure.javaClass.simpleName}: ${failure.message}"
+private val queryString = Regex("""\?[^\s"'<>]*""")
+
+/** Replaces every URL query string with `?***`, so a token in a URL inside a message is never recorded. */
+fun redactUrlQueries(text: String): String = queryString.replace(text, "?$REDACTED")
+
+fun describeFailure(failure: Throwable): String =
+    "${failure.javaClass.simpleName}: ${redactUrlQueries(failure.message.orEmpty())}"
 
 fun formatDiagnosticLine(entry: DiagnosticEntry): String = "${entry.at} ${entry.type.code} ${entry.detail}"
 

@@ -53,42 +53,50 @@ class WidgetController(
      * the next tap's sending render or the final render of this request.
      */
     suspend fun refresh() {
-        val current = WidgetScope.mutex.withLock {
-            val current = settings.read()
-            recorderFor(current).record(DiagnosticEventType.WIDGET_UPDATE_REQUESTED, "refresh")
-            if (current != null) {
-                try {
-                    WidgetSnapshotReadUseCase(selectionsFor(current), snapshots) { Instant.now() }.execute()
-                } finally {
-                    render()
+        var uploadTarget: WidgetSettings? = null
+        try {
+            WidgetScope.mutex.withLock {
+                val loaded = settings.read()
+                uploadTarget = loaded
+                recorderFor(loaded).record(DiagnosticEventType.WIDGET_UPDATE_REQUESTED, "refresh")
+                if (loaded != null) {
+                    try {
+                        WidgetSnapshotReadUseCase(selectionsFor(loaded), snapshots) { Instant.now() }.execute()
+                    } finally {
+                        render()
+                    }
                 }
             }
-            current
+        } finally {
+            uploadTarget?.let { uploadDiagnostics(it) }
         }
-        current?.let { uploadDiagnostics(it) }
     }
 
     suspend fun tap(cell: CellKey) {
-        val current = WidgetScope.mutex.withLock {
-            val current = settings.read()
-            recorderFor(current).record(
-                DiagnosticEventType.TAP_RECEIVED,
-                "project=${cell.project}, activity=${cell.activity.code}",
-            )
-            if (current != null) {
-                try {
-                    WidgetSelectionUpdateUseCase(
-                        selections = selectionsFor(current),
-                        snapshots = snapshots,
-                        afterSendingStarted = { render() },
-                    ) { Instant.now() }.execute(cell)
-                } finally {
-                    render()
+        var uploadTarget: WidgetSettings? = null
+        try {
+            WidgetScope.mutex.withLock {
+                val loaded = settings.read()
+                uploadTarget = loaded
+                recorderFor(loaded).record(
+                    DiagnosticEventType.TAP_RECEIVED,
+                    "project=${cell.project}, activity=${cell.activity.code}",
+                )
+                if (loaded != null) {
+                    try {
+                        WidgetSelectionUpdateUseCase(
+                            selections = selectionsFor(loaded),
+                            snapshots = snapshots,
+                            afterSendingStarted = { render() },
+                        ) { Instant.now() }.execute(cell)
+                    } finally {
+                        render()
+                    }
                 }
             }
-            current
+        } finally {
+            uploadTarget?.let { uploadDiagnostics(it) }
         }
-        current?.let { uploadDiagnostics(it) }
     }
 
     private fun recorderFor(current: WidgetSettings?): DiagnosticRecorder = DiagnosticRecorder(

@@ -14,7 +14,7 @@ class HttpDiagnosticsRepository(
 ) : DiagnosticsUploadRepository {
     override fun upload(entries: List<DiagnosticEntry>): DiagnosticsUploadResult {
         val body = try {
-            followRedirects(transport, transport.send(HttpRequest("POST", endpointUrl, encodeDiagnosticsUpload(entries))))
+            followRedirects(transport, endpointUrl, transport.send(HttpRequest("POST", endpointUrl, encodeDiagnosticsUpload(entries))))
         } catch (failure: IOException) {
             return DiagnosticsUploadResult.Failed("request failed: ${failure.javaClass.simpleName}")
         } catch (failure: CommunicationFailedException) {

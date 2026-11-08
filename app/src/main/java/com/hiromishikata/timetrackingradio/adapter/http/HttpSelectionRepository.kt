@@ -11,6 +11,7 @@ import com.hiromishikata.timetrackingradio.domain.SelectionResponse
 import com.hiromishikata.timetrackingradio.domain.describeFailure
 import com.hiromishikata.timetrackingradio.domain.encodeSelectionRequest
 import com.hiromishikata.timetrackingradio.domain.parseSelectionResponse
+import com.hiromishikata.timetrackingradio.domain.redactUrlQueries
 import java.io.IOException
 
 class HttpSelectionRepository(
@@ -26,7 +27,7 @@ class HttpSelectionRepository(
 
     private fun communicate(send: () -> HttpResponse): SelectionResponse {
         val body = try {
-            followRedirects(transport, send())
+            followRedirects(transport, endpointUrl, send())
         } catch (failure: IOException) {
             diagnostics.record(DiagnosticEventType.EXCEPTION, describeFailure(failure))
             throw CommunicationFailedException("request to the endpoint failed", failure)
@@ -37,7 +38,7 @@ class HttpSelectionRepository(
         return try {
             parseSelectionResponse(body).also { response -> recordOutcome(response) }
         } catch (failure: MalformedResponseException) {
-            diagnostics.record(DiagnosticEventType.RESPONSE_PARSED, "malformed: ${failure.message}")
+            diagnostics.record(DiagnosticEventType.RESPONSE_PARSED, "malformed: ${redactUrlQueries(failure.message.orEmpty())}")
             throw CommunicationFailedException("endpoint returned an unexpected response", failure)
         }
     }
@@ -47,7 +48,7 @@ class HttpSelectionRepository(
             is SelectionResponse.Accepted -> diagnostics.record(DiagnosticEventType.RESPONSE_PARSED, "ok")
             is SelectionResponse.Rejected -> {
                 diagnostics.record(DiagnosticEventType.RESPONSE_PARSED, "ng")
-                diagnostics.record(DiagnosticEventType.SERVER_NG, response.message)
+                diagnostics.record(DiagnosticEventType.SERVER_NG, redactUrlQueries(response.message))
             }
         }
     }
