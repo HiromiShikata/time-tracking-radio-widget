@@ -33,4 +33,7 @@
     <string name="copy_log">Copy log</string>
     <string name="log_copied">Log copied to the clipboard.</string>
     <string name="problem_endpoint_not_a_uri">The endpoint URL contains a character that is not allowed in a URL.</string>
+    <string name="widget_work_channel_name">Widget updates</string>
+    <string name="widget_work_channel_description">Shown while the widget sends a selection</string>
+    <string name="widget_work_notification_text">Sending widget selection</string>
 </resources>

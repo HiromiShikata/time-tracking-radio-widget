@@ -33,4 +33,7 @@
     <string name="copy_log">ログをコピー</string>
     <string name="log_copied">ログをクリップボードにコピーしました。</string>
     <string name="problem_endpoint_not_a_uri">エンドポイント URL に URL として使えない文字が含まれています。</string>
+    <string name="widget_work_channel_name">ウィジェットの更新</string>
+    <string name="widget_work_channel_description">ウィジェットが選択を送信している間に表示されます</string>
+    <string name="widget_work_notification_text">ウィジェットの選択を送信中</string>
 </resources>

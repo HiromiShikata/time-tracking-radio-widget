@@ -13,11 +13,12 @@ import com.hiromishikata.timetrackingradio.domain.CellKey
 
 object WidgetWorkScheduler {
     fun enqueueTap(context: Context, cell: CellKey) {
-        val request = networkRequest<WidgetSelectionWorker>(
+        val request = buildWorkRequest<WidgetSelectionWorker>(
             workDataOf(
                 WidgetSelectionWorker.KEY_PROJECT to cell.project,
                 WidgetSelectionWorker.KEY_ACTIVITY to cell.activity.code,
             ),
+            expedited = true,
         )
         WorkManager.getInstance(context).enqueueUniqueWork(
             WidgetSelectionWorker.UNIQUE_WORK_NAME,
@@ -30,7 +31,7 @@ object WidgetWorkScheduler {
         WorkManager.getInstance(context).enqueueUniqueWork(
             WidgetSelectionWorker.UNIQUE_WORK_NAME,
             ExistingWorkPolicy.APPEND_OR_REPLACE,
-            networkRequest<WidgetSelectionWorker>(Data.EMPTY),
+            buildWorkRequest<WidgetSelectionWorker>(Data.EMPTY, expedited = true),
         )
     }
 
@@ -38,13 +39,13 @@ object WidgetWorkScheduler {
         WorkManager.getInstance(context).enqueueUniqueWork(
             WidgetDiagnosticsUploadWorker.UNIQUE_WORK_NAME,
             ExistingWorkPolicy.APPEND_OR_REPLACE,
-            networkRequest<WidgetDiagnosticsUploadWorker>(Data.EMPTY),
+            buildWorkRequest<WidgetDiagnosticsUploadWorker>(Data.EMPTY, expedited = false),
         )
     }
 
-    private inline fun <reified Worker : ListenableWorker> networkRequest(input: Data): OneTimeWorkRequest =
-        OneTimeWorkRequestBuilder<Worker>()
-            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-            .setInputData(input)
-            .build()
+    private inline fun <reified Worker : ListenableWorker> buildWorkRequest(input: Data, expedited: Boolean): OneTimeWorkRequest {
+        val builder = OneTimeWorkRequestBuilder<Worker>().setInputData(input)
+        if (expedited) builder.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+        return builder.build()
+    }
 }

@@ -1,6 +1,7 @@
 package com.hiromishikata.timetrackingradio.adapter.widget
 
 import android.content.Context
+import androidx.work.ForegroundInfo
 import androidx.work.ListenableWorker
 import androidx.work.WorkerParameters
 import com.google.common.util.concurrent.ListenableFuture
@@ -11,6 +12,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
@@ -25,9 +28,12 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
         return CompletableListenableFuture(outcome)
     }
 
+    override fun getForegroundInfoAsync(): ListenableFuture<ForegroundInfo> =
+        CompletableListenableFuture(CompletableFuture.completedFuture(WidgetWorkNotification.foregroundInfo(applicationContext)))
+
     override fun onStopped() {
         scope.cancel()
-        controllerFactory(applicationContext).clearSending()
+        controllerFactory(applicationContext).clearSending(inputCellOrNull())
     }
 
     private suspend fun runSelection(): Result {
@@ -35,13 +41,16 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
         return try {
             val cell = requestedCell()
             if (cell == null) controller.refresh() else controller.performTap(cell)
+            currentCoroutineContext().ensureActive()
             WidgetWorkScheduler.enqueueDiagnosticsUpload(applicationContext)
             Result.success()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
             logWidgetWorkFailure(failure)
-            controller.clearSending()
+            controller.clearSending(inputCellOrNull())
+            currentCoroutineContext().ensureActive()
+            WidgetWorkScheduler.enqueueDiagnosticsUpload(applicationContext)
             Result.success()
         }
     }
@@ -55,6 +64,12 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
             requireNotNull(project) { "tap input has no project" },
             requireNotNull(activity) { "tap input has an unknown activity" },
         )
+    }
+
+    private fun inputCellOrNull(): CellKey? = try {
+        requestedCell()
+    } catch (invalid: IllegalArgumentException) {
+        null
     }
 
     companion object {
