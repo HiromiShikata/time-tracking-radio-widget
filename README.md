@@ -5,7 +5,7 @@ A home-screen widget for Android. It shows a grid of projects and two activities
 ## What the widget shows
 
 - A header row (blank, `work`, `meeting`) and one row per configured project, in the configured order.
-- A ring is an unselected cell. A ring with a filled inner disc is the selected cell. A dashed ring is a cell whose request is being sent.
+- A ring is an unselected cell. A ring with a filled inner disc is the selected cell. A dashed ring marks the cell tapped last while its request is waiting or being sent. When several taps wait, only the last one is marked. The mark is dropped after 10 minutes even if the request never finishes.
 - One status line below the grid shows the current state in UTC, for example `Recording project-a / work since 08:39 UTC`.
 - The widget refreshes on its own every 30 minutes at the minimum, after you save the settings, and after every tap.
 
