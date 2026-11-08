@@ -1,8 +1,8 @@
 package com.hiromishikata.timetrackingradio.adapter.widget
 
 import android.appwidget.AppWidgetManager
-import android.content.ComponentName
 import android.content.Context
+import android.content.ComponentName
 import com.hiromishikata.timetrackingradio.adapter.http.DIAGNOSTICS_UPLOAD_TIMEOUT_MILLIS
 import com.hiromishikata.timetrackingradio.adapter.http.DiagnosticHttpTransport
 import com.hiromishikata.timetrackingradio.adapter.http.HttpDiagnosticsRepository
@@ -21,6 +21,7 @@ import com.hiromishikata.timetrackingradio.domain.SelectionRepository
 import com.hiromishikata.timetrackingradio.domain.WidgetSettings
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
 import com.hiromishikata.timetrackingradio.domain.endpointKeySecrets
+import com.hiromishikata.timetrackingradio.domain.resolveTapRequest
 import com.hiromishikata.timetrackingradio.usecase.DiagnosticUploadUseCase
 import com.hiromishikata.timetrackingradio.usecase.WidgetSelectionUpdateUseCase
 import com.hiromishikata.timetrackingradio.usecase.WidgetSnapshotReadUseCase
@@ -48,55 +49,62 @@ class WidgetController(
         publish(settings.read(), snapshots.read())
     }
 
-    /**
-     * The diagnostics upload runs after the mutex is released, so a slow or failing endpoint never delays
-     * the next tap's sending render or the final render of this request.
-     */
-    suspend fun refresh() {
-        var uploadTarget: WidgetSettings? = null
-        try {
-            WidgetScope.mutex.withLock {
-                val loaded = settings.read()
-                uploadTarget = loaded
-                recorderFor(loaded).record(DiagnosticEventType.WIDGET_UPDATE_REQUESTED, "refresh")
-                if (loaded != null) {
-                    try {
-                        WidgetSnapshotReadUseCase(selectionsFor(loaded), snapshots) { Instant.now() }.execute()
-                    } finally {
-                        render()
-                    }
-                }
-            }
-        } finally {
-            uploadTarget?.let { uploadDiagnostics(it) }
+    fun acceptTap(cell: CellKey) {
+        val loaded = settings.read()
+        recorderFor(loaded).record(
+            DiagnosticEventType.TAP_RECEIVED,
+            "project=${cell.project}, activity=${cell.activity.code}",
+        )
+        if (loaded != null) {
+            val previous = snapshots.read()
+            snapshots.write(previous.copy(sending = resolveTapRequest(previous.selection, cell)))
+            render()
         }
     }
 
-    suspend fun tap(cell: CellKey) {
-        var uploadTarget: WidgetSettings? = null
-        try {
-            WidgetScope.mutex.withLock {
-                val loaded = settings.read()
-                uploadTarget = loaded
-                recorderFor(loaded).record(
-                    DiagnosticEventType.TAP_RECEIVED,
-                    "project=${cell.project}, activity=${cell.activity.code}",
-                )
-                if (loaded != null) {
-                    try {
-                        WidgetSelectionUpdateUseCase(
-                            selections = selectionsFor(loaded),
-                            snapshots = snapshots,
-                            afterSendingStarted = { render() },
-                        ) { Instant.now() }.execute(cell)
-                    } finally {
-                        render()
-                    }
+    suspend fun performTap(cell: CellKey) {
+        WidgetScope.mutex.withLock {
+            val loaded = settings.read()
+            if (loaded != null) {
+                try {
+                    WidgetSelectionUpdateUseCase(
+                        selections = selectionsFor(loaded),
+                        snapshots = snapshots,
+                        afterSendingStarted = { render() },
+                    ) { Instant.now() }.execute(cell)
+                } finally {
+                    render()
                 }
             }
-        } finally {
-            uploadTarget?.let { uploadDiagnostics(it) }
         }
+    }
+
+    suspend fun refresh() {
+        WidgetScope.mutex.withLock {
+            val loaded = settings.read()
+            recorderFor(loaded).record(DiagnosticEventType.WIDGET_UPDATE_REQUESTED, "refresh")
+            if (loaded != null) {
+                try {
+                    WidgetSnapshotReadUseCase(selectionsFor(loaded), snapshots) { Instant.now() }.execute()
+                } finally {
+                    render()
+                }
+            }
+        }
+    }
+
+    fun clearSending() {
+        snapshots.write(snapshots.read().copy(sending = null))
+        render()
+    }
+
+    fun uploadDiagnostics() {
+        val loaded = settings.read() ?: return
+        DiagnosticUploadUseCase(
+            diagnosticLog,
+            HttpDiagnosticsRepository(loaded.endpointUrl, uploadTransportFactory()),
+            recorderFor(loaded),
+        ).execute()
     }
 
     private fun recorderFor(current: WidgetSettings?): DiagnosticRecorder = DiagnosticRecorder(
@@ -111,14 +119,6 @@ class WidgetController(
             DiagnosticHttpTransport(transportFactory(), current.endpointUrl, recorder),
             recorder,
         )
-    }
-
-    private fun uploadDiagnostics(current: WidgetSettings) {
-        DiagnosticUploadUseCase(
-            diagnosticLog,
-            HttpDiagnosticsRepository(current.endpointUrl, uploadTransportFactory()),
-            recorderFor(current),
-        ).execute()
     }
 }
 
