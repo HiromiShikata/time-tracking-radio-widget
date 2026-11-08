@@ -86,17 +86,17 @@ tasks.withType<Test> {
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("androidx.work:work-runtime-ktx:2.12.0")
     implementation("androidx.core:core-ktx:1.18.0")
 
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     testImplementation("org.robolectric:robolectric:4.17")
     testImplementation("androidx.work:work-testing:2.12.0")
     testImplementation("com.squareup.okhttp3:mockwebserver:5.5.1")
-    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.60.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.77.0")
 }
 
 val installGitHooks by tasks.registering {
