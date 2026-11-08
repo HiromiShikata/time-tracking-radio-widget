@@ -5,6 +5,7 @@ import com.hiromishikata.timetrackingradio.TestApplication
 import com.hiromishikata.timetrackingradio.adapter.http.FakeHttpTransport
 import com.hiromishikata.timetrackingradio.adapter.http.HttpRequest
 import com.hiromishikata.timetrackingradio.adapter.http.HttpResponse
+import com.hiromishikata.timetrackingradio.adapter.http.HttpTransport
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueWidgetSettingsRepository
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueDiagnosticLogRepository
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueWidgetSnapshotRepository
@@ -14,6 +15,7 @@ import com.hiromishikata.timetrackingradio.domain.ActivityKind
 import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
 import com.hiromishikata.timetrackingradio.domain.CellKey
 import com.hiromishikata.timetrackingradio.domain.Selection
+import com.hiromishikata.timetrackingradio.domain.SelectionRequest
 import com.hiromishikata.timetrackingradio.domain.WidgetOutcome
 import com.hiromishikata.timetrackingradio.domain.WidgetSettings
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
@@ -28,6 +30,9 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.io.IOException
 import java.time.Instant
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = TestApplication::class)
@@ -110,5 +115,42 @@ class WidgetControllerTest {
         val transport = FakeHttpTransport(ArrayDeque())
         runBlocking { controller(transport).refresh() }
         assertEquals(listOf("widget_update_requested"), KeyValueDiagnosticLogRepository(store).readAll().map { it.type.code })
+    }
+
+    private class BlockingUploadTransport(private val selectionBody: String) : HttpTransport {
+        val uploadStarted = CountDownLatch(1)
+        val releaseUpload = CountDownLatch(1)
+
+        override fun send(request: HttpRequest): HttpResponse {
+            if (request.body?.startsWith("{\"diagnostics\"") == true) {
+                uploadStarted.countDown()
+                releaseUpload.await(10, TimeUnit.SECONDS)
+                return HttpResponse(200, null, """{"result":"ok","accepted":1}""")
+            }
+            return HttpResponse(200, null, selectionBody)
+        }
+    }
+
+    @Test
+    fun aSlowDiagnosticsUploadDoesNotDelayTheNextTapsSendingRender() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val transport = BlockingUploadTransport("""{"result":"ok","selection":null}""")
+        val nextCell = CellKey("project-b", ActivityKind.WORK)
+        val nextTapRendered = CountDownLatch(1)
+        val publish: (WidgetSettings?, WidgetSnapshot) -> Unit = { _, snapshot ->
+            if (snapshot.sending == SelectionRequest.Select(nextCell)) nextTapRendered.countDown()
+        }
+        val first = thread { runBlocking { WidgetController(context, { transport }, publish).tap(meeting) } }
+        try {
+            assertTrue("the first upload started", transport.uploadStarted.await(5, TimeUnit.SECONDS))
+            val second = thread { runBlocking { WidgetController(context, { transport }, publish).tap(nextCell) } }
+            val rendered = nextTapRendered.await(2, TimeUnit.SECONDS)
+            transport.releaseUpload.countDown()
+            first.join(5_000)
+            second.join(5_000)
+            assertTrue("the next tap rendered its sending state while the upload was still blocked", rendered)
+        } finally {
+            transport.releaseUpload.countDown()
+        }
     }
 }
