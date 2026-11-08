@@ -9,6 +9,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
 import java.time.Instant
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class HttpDiagnosticsRepositoryTest {
     private val endpoint = "https://script.example.com/exec?key=k"
@@ -41,5 +43,25 @@ class HttpDiagnosticsRepositoryTest {
             assertEquals("delivered", delivered, result is DiagnosticsUploadResult.Delivered)
             if (!delivered) assertTrue(result is DiagnosticsUploadResult.Failed)
         }
+    }
+
+    @Test
+    fun anUploadIsAbandonedWhenItExceedsTheTotalDeadline() {
+        val release = CountDownLatch(1)
+        val stalled = object : HttpTransport {
+            override fun send(request: HttpRequest): HttpResponse {
+                release.await(5, TimeUnit.SECONDS)
+                return HttpResponse(200, null, """{"result":"ok","accepted":1}""")
+            }
+        }
+        val startedNanos = System.nanoTime()
+        val result = try {
+            HttpDiagnosticsRepository(endpoint, stalled, deadlineMillis = 200).upload(entries)
+        } finally {
+            release.countDown()
+        }
+        val elapsedMillis = (System.nanoTime() - startedNanos) / 1_000_000
+        assertTrue("result=$result", result is DiagnosticsUploadResult.Failed)
+        assertTrue("elapsed=${elapsedMillis}ms", elapsedMillis < 2_000)
     }
 }
