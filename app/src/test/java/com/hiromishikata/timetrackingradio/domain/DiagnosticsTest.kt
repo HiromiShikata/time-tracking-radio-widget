@@ -4,6 +4,7 @@ import com.hiromishikata.timetrackingradio.usecase.FakeDiagnosticLogRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.net.URISyntaxException
 import java.time.Instant
 
 class DiagnosticsTest {
@@ -97,6 +98,15 @@ class DiagnosticsTest {
             log.recorded.map { Triple(it.type, it.detail, it.at) },
         )
         assertTrue(log.recorded.none { it.detail.contains("s3cr3t") })
+    }
+
+    @Test
+    fun describeFailureDropsEverythingAfterTheQueryMarkEvenWithSpaces() {
+        val failure = URISyntaxException("https://script.example.com/exec?key=SECRET123 x", "Illegal character in query")
+        assertEquals(
+            "URISyntaxException: Illegal character in query: https://script.example.com/exec?***",
+            describeFailure(failure),
+        )
     }
 
     @Test

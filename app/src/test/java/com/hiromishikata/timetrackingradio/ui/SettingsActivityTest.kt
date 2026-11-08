@@ -86,6 +86,34 @@ class SettingsActivityTest {
     }
 
     @Test
+    fun anUnparsableEndpointIsRejectedOnSaveAndNoCheckRuns() {
+        val transport = useTransport("""{"result":"ok","selection":null}""")
+        val activity = launch(widgetId = 7)
+        activity.findViewById<EditText>(R.id.endpoint_input).setText("https://script.example.com/exec?key=a b")
+        activity.findViewById<EditText>(R.id.projects_input).setText("project-a")
+        activity.findViewById<Button>(R.id.save_button).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(emptyList<String>(), transport.requests.map { it.method })
+        assertEquals("", activity.findViewById<TextView>(R.id.connection_status).text.toString())
+        assertEquals(Activity.RESULT_CANCELED, shadowOf(activity).resultCode)
+    }
+
+    @Test
+    fun anUnexpectedFailureOfTheConnectionCheckIsShownAndDoesNotCrash() {
+        SettingsActivity.transportFactory = { throw IllegalStateException("boom") }
+        val activity = launch(widgetId = 7)
+        activity.findViewById<EditText>(R.id.endpoint_input).setText(endpoint)
+        activity.findViewById<EditText>(R.id.projects_input).setText("project-a")
+        activity.findViewById<Button>(R.id.save_button).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(
+            "Connection failed: IllegalStateException: boom",
+            activity.findViewById<TextView>(R.id.connection_status).text.toString(),
+        )
+        assertTrue(activity.findViewById<TextView>(R.id.log_text).text.toString().contains("exception IllegalStateException: boom"))
+    }
+
+    @Test
     fun copyLogPutsTheWholeLogOnTheClipboard() {
         KeyValueDiagnosticLogRepository(
             SharedPreferencesKeyValueStore(context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE)),

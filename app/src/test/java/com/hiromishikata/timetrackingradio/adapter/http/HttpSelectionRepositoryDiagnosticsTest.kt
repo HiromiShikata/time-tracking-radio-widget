@@ -1,5 +1,6 @@
 package com.hiromishikata.timetrackingradio.adapter.http
 
+import com.hiromishikata.timetrackingradio.domain.CommunicationFailedException
 import com.hiromishikata.timetrackingradio.domain.DiagnosticRecorder
 import com.hiromishikata.timetrackingradio.domain.SelectionRequest
 import com.hiromishikata.timetrackingradio.domain.endpointKeySecrets
@@ -7,6 +8,8 @@ import com.hiromishikata.timetrackingradio.domain.ActivityKind
 import com.hiromishikata.timetrackingradio.domain.CellKey
 import com.hiromishikata.timetrackingradio.usecase.FakeDiagnosticLogRepository
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
 import java.net.MalformedURLException
@@ -39,6 +42,26 @@ class HttpSelectionRepositoryDiagnosticsTest {
             listOf("exception" to "MalformedURLException: no protocol: /echo?***"),
             log.recorded.map { it.type.code to it.detail },
         )
+    }
+
+    @Test
+    fun anUnparsableEndpointWithARedirectFailsWithoutCrashingOrRecordingTheKey() {
+        val unparsable = "https://script.example.com/exec?key=s3cr3t x"
+        val log = FakeDiagnosticLogRepository()
+        val recorder = DiagnosticRecorder(log, endpointKeySecrets(unparsable)) { Instant.EPOCH }
+        val transport = DiagnosticHttpTransport(
+            FakeHttpTransport(
+                ArrayDeque<() -> HttpResponse>(
+                    listOf({ HttpResponse(302, "https://script.example.com/echo?token=SECRET123", "") }),
+                ),
+            ),
+            unparsable,
+            recorder,
+        )
+        val thrown = runCatching { HttpSelectionRepository(unparsable, transport, recorder).read() }.exceptionOrNull()
+        assertTrue("thrown=$thrown", thrown is CommunicationFailedException)
+        assertFalse(thrown.toString().contains("s3cr3t"))
+        assertTrue(log.recorded.none { it.detail.contains("s3cr3t") || it.detail.contains("SECRET123") })
     }
 
     @Test
