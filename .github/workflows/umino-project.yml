@@ -1,0 +1,195 @@
+# DO NOT EDIT DIRECTLY.
+# This file is auto-synchronized from HiromiShikata/repositories-management.
+# Direct edits in downstream repositories will be overwritten by the next sync.
+# Update the source file in HiromiShikata/repositories-management instead.
+
+name: UMINO Project
+
+permissions:
+  contents: read
+
+on:
+  issues:
+    types:
+      - opened
+      - reopened
+      - labeled
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - review_requested
+      - labeled
+      - edited
+      - synchronize
+
+env:
+  awaiting_workspace: Awaiting Workspace
+  in_progress: In Progress
+  user: HiromiShikata
+  project_id: 48
+  project_v2_id: PVT_kwHOAGJHa84AFWnr
+  field_id: PVTF_lAHOAGJHa84AFWnrzgIk_H0
+
+jobs:
+  umino-job:
+    if: >-
+      github.repository != 'HiromiShikata/test-repository' &&
+      github.actor != 'dependabot[bot]' &&
+      github.actor != 'renovate[bot]' &&
+      github.actor != 'app/dependabot' &&
+      github.event.action != 'labeled' &&
+      (
+        (github.event_name == 'issues' &&
+         (github.event.action == 'opened' || github.event.action == 'reopened')) ||
+        (github.event_name == 'pull_request' && github.event.action == 'opened')
+      )
+    runs-on: ubuntu-slim
+    timeout-minutes: 7
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2
+        with:
+          egress-policy: audit
+      - name: Generate hs-bot-gh-ap installation token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.HS_BOT_GH_AP_CLIENT_ID }}
+          private-key: ${{ secrets.HS_BOT_GH_AP_PRIVATE_KEY }}
+          owner: HiromiShikata
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: >-
+          github.event_name == 'issues' && github.event.issue.state == 'open' &&
+          (github.event.action == 'opened' || github.event.action == 'reopened')
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        if: >-
+          github.event_name == 'issues' && github.event.issue.state == 'open' &&
+          (github.event.action == 'opened' || github.event.action == 'reopened')
+        with:
+          node-version: 24
+      - name: Move issue to ${{ env.awaiting_workspace }}
+        run: |
+          bash scripts/ensure-repositories-management-scripts-typescript.sh
+          cd scripts/typescript
+          npm i
+          npx tsx src/adapter/entry-points/cli/add-project-board-item.ts
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          PROJECT_V2_ID: ${{ env.project_v2_id }}
+          STATUS_FIELD_ID: PVTSSF_lAHOAGJHa84AFWnrzgDFcxE
+          AWAITING_WORKSPACE_OPTION_ID: d1c19cce
+          EVENT_ACTION: ${{ github.event.action }}
+          ISSUE_NODE_ID: ${{ github.event.issue.node_id }}
+          PULL_REQUEST_NODE_ID: ${{ github.event.pull_request.node_id }}
+        if: >-
+          github.event_name == 'issues' && github.event.issue.state == 'open' &&
+          (github.event.action == 'opened' || github.event.action == 'reopened')
+      - run: |
+          OWNER=$(echo ${{ github.repository }} | cut -d '/' -f 1)
+          REPO=$(echo ${{ github.repository }} | cut -d '/' -f 2)
+          ENTITY_TYPE=$(echo "$EVENT_NAME" | grep -q "pull_request" && echo "pullRequest" || echo "issue")
+          NUMBER=$(echo "$EVENT_NAME" | grep -q "pull_request" && echo "$PR_NUMBER" || echo "$ISSUE_NUMBER")
+
+          QUERY_DATA='{ "query": "query { repository(owner: \"'$OWNER'\", name: \"'$REPO'\") { '${ENTITY_TYPE}'(number: '$NUMBER') { projectItems(first: 10) { nodes { id } } } } }" }'
+          RESPONSE=$(curl -X POST -H "Authorization: Bearer $GH_PROJECT_TOKEN" -H "Content-Type: application/json" --data "$QUERY_DATA" https://api.github.com/graphql)
+
+          if echo $RESPONSE | grep -q "errors"; then
+            echo "Error in GraphQL query"
+            echo "GraphQL Response: $RESPONSE"
+            exit 1
+          fi
+
+          if [ "$ENTITY_TYPE" = "pullRequest" ]; then
+            ITEM_ID=$(echo $RESPONSE | jq -r '.data.repository.pullRequest.projectItems.nodes[0].id')
+          else
+            ITEM_ID=$(echo $RESPONSE | jq -r '.data.repository.issue.projectItems.nodes[0].id')
+          fi
+
+          if [ "$ITEM_ID" = "null" ] || [ -z "$ITEM_ID" ]; then
+            echo "No valid item ID found, cannot proceed"
+            exit 1
+          fi
+
+          CLEAR_FIELD_DATA="{\"query\":\"mutation { clearProjectV2ItemFieldValue(input: {projectId: \\\"${{ env.project_v2_id }}\\\", fieldId: \\\"${{ env.field_id }}\\\", itemId: \\\"$ITEM_ID\\\"}) { clientMutationId }}\"}"
+          CLEAR_RESPONSE=$(curl --request POST \
+            --url https://api.github.com/graphql \
+            --header "Authorization: Bearer $GH_PROJECT_TOKEN" \
+            --header "Content-Type: application/json" \
+            --data "$CLEAR_FIELD_DATA")
+
+          if echo $CLEAR_RESPONSE | grep -q "errors"; then
+            echo "Error in clearing field"
+            echo "Clear Field Response: $CLEAR_RESPONSE"
+            exit 1
+          fi
+        env:
+          GH_PROJECT_TOKEN: ${{ secrets.GH_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        if: >-
+          github.event_name == 'issues' && github.event.issue.state == 'open' &&
+          (github.event.action == 'opened' || github.event.action == 'reopened')
+
+      - name: Auto assign issue to owner
+        if: >-
+          github.event_name == 'issues' &&
+          github.event.action == 'opened'
+        uses: pozil/auto-assign-issue@af6beea6bdf1e8eb373f061c5bc168681fc6d011
+        with:
+          assignees: HiromiShikata
+          repo-token: ${{ steps.app-token.outputs.token }}
+      - name: Auto assign PR to owner
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.action == 'opened'
+        uses: pozil/auto-assign-issue@af6beea6bdf1e8eb373f061c5bc168681fc6d011
+        with:
+          assignees: HiromiShikata
+          repo-token: ${{ steps.app-token.outputs.token }}
+
+  check_pull_requests_to_link_issues:
+    runs-on: ubuntu-slim
+    timeout-minutes: 7
+    name: Check linked issues in pull requests
+    if: >-
+      vars.PULL_REQUEST_CHECKS_IN_REPOSITORY_CI != 'true' &&
+      github.repository != 'HiromiShikata/test-repository' &&
+      (github.event_name == 'pull_request') &&
+      (github.event.action == 'edited' ||
+       github.event.action == 'synchronize' ||
+       github.event.action == 'reopened') &&
+      github.actor != 'dependabot[bot]' &&
+      github.actor != 'renovate[bot]' &&
+      github.actor != 'app/dependabot' &&
+      github.event.pull_request.user.login != 'dependabot[bot]'
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2
+        with:
+          egress-policy: audit
+      - name: Generate hs-bot-gh-ap installation token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.HS_BOT_GH_AP_CLIENT_ID }}
+          private-key: ${{ secrets.HS_BOT_GH_AP_PRIVATE_KEY }}
+          owner: HiromiShikata
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: >-
+          github.event.pull_request.user.login != 'dependabot[bot]' &&
+          github.event.pull_request.user.login != 'app/dependabot'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        if: >-
+          github.event.pull_request.user.login != 'dependabot[bot]' &&
+          github.event.pull_request.user.login != 'app/dependabot'
+        with:
+          node-version: 24
+      - name: Check linked issues in pull request description
+        id: check-linked-issues
+        if: >-
+          github.event.pull_request.user.login != 'dependabot[bot]' &&
+          github.event.pull_request.user.login != 'app/dependabot'
+        run: bash scripts/check-pull-request-linked-issues-runner.sh
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ACCOUNT_OWNER: HiromiShikata
