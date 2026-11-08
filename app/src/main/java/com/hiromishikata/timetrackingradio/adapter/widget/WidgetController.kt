@@ -3,17 +3,24 @@ package com.hiromishikata.timetrackingradio.adapter.widget
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
+import com.hiromishikata.timetrackingradio.adapter.http.DiagnosticHttpTransport
+import com.hiromishikata.timetrackingradio.adapter.http.HttpDiagnosticsRepository
 import com.hiromishikata.timetrackingradio.adapter.http.HttpSelectionRepository
 import com.hiromishikata.timetrackingradio.adapter.http.HttpTransport
 import com.hiromishikata.timetrackingradio.adapter.http.HttpUrlConnectionTransport
+import com.hiromishikata.timetrackingradio.adapter.store.KeyValueDiagnosticLogRepository
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueWidgetSettingsRepository
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueWidgetSnapshotRepository
 import com.hiromishikata.timetrackingradio.adapter.store.SETTINGS_PREFERENCES_NAME
 import com.hiromishikata.timetrackingradio.adapter.store.SharedPreferencesKeyValueStore
 import com.hiromishikata.timetrackingradio.domain.CellKey
+import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
+import com.hiromishikata.timetrackingradio.domain.DiagnosticRecorder
 import com.hiromishikata.timetrackingradio.domain.SelectionRepository
 import com.hiromishikata.timetrackingradio.domain.WidgetSettings
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
+import com.hiromishikata.timetrackingradio.domain.endpointKeySecrets
+import com.hiromishikata.timetrackingradio.usecase.DiagnosticUploadUseCase
 import com.hiromishikata.timetrackingradio.usecase.WidgetSelectionUpdateUseCase
 import com.hiromishikata.timetrackingradio.usecase.WidgetSnapshotReadUseCase
 import kotlinx.coroutines.sync.withLock
@@ -31,6 +38,7 @@ class WidgetController(
     )
     private val settings = KeyValueWidgetSettingsRepository(store)
     private val snapshots = KeyValueWidgetSnapshotRepository(store)
+    private val diagnosticLog = KeyValueDiagnosticLogRepository(store)
 
     fun render() {
         publish(settings.read(), snapshots.read())
@@ -38,18 +46,26 @@ class WidgetController(
 
     suspend fun refresh() {
         WidgetScope.mutex.withLock {
-            val current = settings.read() ?: return@withLock
+            val current = settings.read()
+            recorderFor(current).record(DiagnosticEventType.WIDGET_UPDATE_REQUESTED, "refresh")
+            if (current == null) return@withLock
             try {
                 WidgetSnapshotReadUseCase(selectionsFor(current), snapshots) { Instant.now() }.execute()
             } finally {
                 render()
+                uploadDiagnostics(current)
             }
         }
     }
 
     suspend fun tap(cell: CellKey) {
         WidgetScope.mutex.withLock {
-            val current = settings.read() ?: return@withLock
+            val current = settings.read()
+            recorderFor(current).record(
+                DiagnosticEventType.TAP_RECEIVED,
+                "project=${cell.project}, activity=${cell.activity.code}",
+            )
+            if (current == null) return@withLock
             try {
                 WidgetSelectionUpdateUseCase(
                     selections = selectionsFor(current),
@@ -58,12 +74,32 @@ class WidgetController(
                 ) { Instant.now() }.execute(cell)
             } finally {
                 render()
+                uploadDiagnostics(current)
             }
         }
     }
 
-    private fun selectionsFor(current: WidgetSettings): SelectionRepository =
-        HttpSelectionRepository(current.endpointUrl, transportFactory())
+    private fun recorderFor(current: WidgetSettings?): DiagnosticRecorder = DiagnosticRecorder(
+        diagnosticLog,
+        endpointKeySecrets(current?.endpointUrl.orEmpty()),
+    ) { Instant.now() }
+
+    private fun selectionsFor(current: WidgetSettings): SelectionRepository {
+        val recorder = recorderFor(current)
+        return HttpSelectionRepository(
+            current.endpointUrl,
+            DiagnosticHttpTransport(transportFactory(), current.endpointUrl, recorder),
+            recorder,
+        )
+    }
+
+    private fun uploadDiagnostics(current: WidgetSettings) {
+        DiagnosticUploadUseCase(
+            diagnosticLog,
+            HttpDiagnosticsRepository(current.endpointUrl, transportFactory()),
+            recorderFor(current),
+        ).execute()
+    }
 }
 
 private fun publishToAllWidgets(context: Context, settings: WidgetSettings?, snapshot: WidgetSnapshot) {

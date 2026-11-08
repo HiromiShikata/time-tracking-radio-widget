@@ -1,10 +1,14 @@
 package com.hiromishikata.timetrackingradio.adapter.http
 
 import com.hiromishikata.timetrackingradio.domain.CommunicationFailedException
+import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
+import com.hiromishikata.timetrackingradio.domain.DiagnosticSink
 import com.hiromishikata.timetrackingradio.domain.MalformedResponseException
+import com.hiromishikata.timetrackingradio.domain.NoDiagnostics
 import com.hiromishikata.timetrackingradio.domain.SelectionRepository
 import com.hiromishikata.timetrackingradio.domain.SelectionRequest
 import com.hiromishikata.timetrackingradio.domain.SelectionResponse
+import com.hiromishikata.timetrackingradio.domain.describeFailure
 import com.hiromishikata.timetrackingradio.domain.encodeSelectionRequest
 import com.hiromishikata.timetrackingradio.domain.parseSelectionResponse
 import java.io.IOException
@@ -12,6 +16,7 @@ import java.io.IOException
 class HttpSelectionRepository(
     private val endpointUrl: String,
     private val transport: HttpTransport,
+    private val diagnostics: DiagnosticSink = NoDiagnostics,
 ) : SelectionRepository {
     override fun read(): SelectionResponse =
         communicate { transport.send(HttpRequest("GET", endpointUrl, null)) }
@@ -21,36 +26,29 @@ class HttpSelectionRepository(
 
     private fun communicate(send: () -> HttpResponse): SelectionResponse {
         val body = try {
-            followRedirects(send())
+            followRedirects(transport, send())
         } catch (failure: IOException) {
+            diagnostics.record(DiagnosticEventType.EXCEPTION, describeFailure(failure))
             throw CommunicationFailedException("request to the endpoint failed", failure)
+        } catch (failure: CommunicationFailedException) {
+            diagnostics.record(DiagnosticEventType.EXCEPTION, describeFailure(failure))
+            throw failure
         }
         return try {
-            parseSelectionResponse(body)
+            parseSelectionResponse(body).also { response -> recordOutcome(response) }
         } catch (failure: MalformedResponseException) {
+            diagnostics.record(DiagnosticEventType.RESPONSE_PARSED, "malformed: ${failure.message}")
             throw CommunicationFailedException("endpoint returned an unexpected response", failure)
         }
     }
 
-    private fun followRedirects(initial: HttpResponse): String {
-        var response = initial
-        var hops = 0
-        while (response.status in REDIRECT_RANGE) {
-            val location = response.location
-                ?: throw CommunicationFailedException("endpoint redirected without a location")
-            if (hops == MAX_REDIRECTS) throw CommunicationFailedException("endpoint redirected too many times")
-            response = transport.send(HttpRequest("GET", location, null))
-            hops++
+    private fun recordOutcome(response: SelectionResponse) {
+        when (response) {
+            is SelectionResponse.Accepted -> diagnostics.record(DiagnosticEventType.RESPONSE_PARSED, "ok")
+            is SelectionResponse.Rejected -> {
+                diagnostics.record(DiagnosticEventType.RESPONSE_PARSED, "ng")
+                diagnostics.record(DiagnosticEventType.SERVER_NG, response.message)
+            }
         }
-        if (response.status !in SUCCESS_RANGE) {
-            throw CommunicationFailedException("endpoint returned HTTP ${response.status}")
-        }
-        return response.body
-    }
-
-    private companion object {
-        const val MAX_REDIRECTS = 5
-        val REDIRECT_RANGE = 300..399
-        val SUCCESS_RANGE = 200..299
     }
 }
