@@ -27,7 +27,9 @@ import com.hiromishikata.timetrackingradio.adapter.store.SETTINGS_PREFERENCES_NA
 import com.hiromishikata.timetrackingradio.adapter.store.SharedPreferencesKeyValueStore
 import com.hiromishikata.timetrackingradio.adapter.widget.SelectionWidgetProvider
 import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
+import com.hiromishikata.timetrackingradio.domain.ConnectionCheckResult
 import com.hiromishikata.timetrackingradio.domain.DiagnosticRecorder
+import com.hiromishikata.timetrackingradio.domain.describeFailure
 import com.hiromishikata.timetrackingradio.domain.WidgetSettings
 import com.hiromishikata.timetrackingradio.domain.WidgetSettingsProblem
 import com.hiromishikata.timetrackingradio.domain.WidgetSettingsValidation
@@ -95,28 +97,46 @@ class SettingsActivity : Activity() {
     }
 
     /** Runs on the background executor; the screen stays open so the outcome can be read. */
+    /**
+     * Runs on the background executor. Every failure is caught here, recorded and shown, so an exception can
+     * never escape the executor; the screen stays open.
+     */
     private fun checkConnection(settings: WidgetSettings) {
         findViewById<TextView>(R.id.connection_status).text = getString(R.string.connection_checking)
         backgroundExecutor.execute {
-            val recorder = recorderFor(settings)
-            val result = WidgetConnectionCheckUseCase(
-                HttpSelectionRepository(
-                    settings.endpointUrl,
-                    DiagnosticHttpTransport(transportFactory(), settings.endpointUrl, recorder),
-                    recorder,
-                ),
-                recorder,
-                endpointKeySecrets(settings.endpointUrl),
-            ).execute()
-            DiagnosticUploadUseCase(
-                diagnosticLog,
-                HttpDiagnosticsRepository(settings.endpointUrl, uploadTransportFactory()),
-                recorder,
-            ).execute()
-            runOnUiThread {
-                findViewById<TextView>(R.id.connection_status).text = connectionCheckMessage(this, result)
-                renderLog()
+            try {
+                runConnectionCheck(settings)
+            } catch (failure: Exception) {
+                val detail = describeFailure(failure, endpointKeySecrets(settings.endpointUrl))
+                recorderFor(settings).record(DiagnosticEventType.EXCEPTION, detail)
+                runOnUiThread {
+                    findViewById<TextView>(R.id.connection_status).text =
+                        connectionCheckMessage(this, ConnectionCheckResult.Failed(detail))
+                    renderLog()
+                }
             }
+        }
+    }
+
+    private fun runConnectionCheck(settings: WidgetSettings) {
+        val recorder = recorderFor(settings)
+        val result = WidgetConnectionCheckUseCase(
+            HttpSelectionRepository(
+                settings.endpointUrl,
+                DiagnosticHttpTransport(transportFactory(), settings.endpointUrl, recorder),
+                recorder,
+            ),
+            recorder,
+            endpointKeySecrets(settings.endpointUrl),
+        ).execute()
+        DiagnosticUploadUseCase(
+            diagnosticLog,
+            HttpDiagnosticsRepository(settings.endpointUrl, uploadTransportFactory()),
+            recorder,
+        ).execute()
+        runOnUiThread {
+            findViewById<TextView>(R.id.connection_status).text = connectionCheckMessage(this, result)
+            renderLog()
         }
     }
 
@@ -140,6 +160,7 @@ class SettingsActivity : Activity() {
     private fun problemMessage(problem: WidgetSettingsProblem): Int = when (problem) {
         WidgetSettingsProblem.ENDPOINT_EMPTY -> R.string.problem_endpoint_empty
         WidgetSettingsProblem.ENDPOINT_NOT_HTTPS -> R.string.problem_endpoint_not_https
+        WidgetSettingsProblem.ENDPOINT_NOT_A_URI -> R.string.problem_endpoint_not_a_uri
         WidgetSettingsProblem.PROJECTS_EMPTY -> R.string.problem_projects_empty
         WidgetSettingsProblem.PROJECT_NAME_DUPLICATED -> R.string.problem_project_duplicated
     }

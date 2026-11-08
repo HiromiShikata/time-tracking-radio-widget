@@ -7,6 +7,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import com.hiromishikata.timetrackingradio.R
+import com.hiromishikata.timetrackingradio.domain.describeFailure
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,7 +35,7 @@ class UpdateInstallActivity : Activity() {
             }
             result.onSuccess { apk -> startInstaller(apk) }
                 .onFailure { failure ->
-                    Log.e(TAG, "update download failed", failure)
+                    Log.e(TAG, "update download failed: ${describeFailure(failure)}")
                     Toast.makeText(this@UpdateInstallActivity, R.string.update_download_failed, Toast.LENGTH_LONG).show()
                 }
             finish()

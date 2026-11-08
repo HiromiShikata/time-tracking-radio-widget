@@ -2,6 +2,9 @@ package com.hiromishikata.timetrackingradio.adapter.http
 
 import com.hiromishikata.timetrackingradio.domain.CommunicationFailedException
 import java.net.URI
+import java.net.URISyntaxException
+
+private const val INVALID_LOCATION_MESSAGE = "endpoint redirected to an invalid location"
 
 private const val MAX_REDIRECTS = 5
 private val REDIRECT_RANGE = 300..399
@@ -29,8 +32,13 @@ fun followRedirects(transport: HttpTransport, requestUrl: String, initial: HttpR
     return response.body
 }
 
+/**
+ * The parse failure is not chained: its message holds the raw URL, which carries the endpoint key.
+ */
 private fun resolveLocation(base: String, location: String): String = try {
     URI(base).resolve(location).toString()
+} catch (failure: URISyntaxException) {
+    throw CommunicationFailedException(INVALID_LOCATION_MESSAGE)
 } catch (failure: IllegalArgumentException) {
-    throw CommunicationFailedException("endpoint redirected to an invalid location", failure)
+    throw CommunicationFailedException(INVALID_LOCATION_MESSAGE)
 }
