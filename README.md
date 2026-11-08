@@ -41,7 +41,7 @@ The app keeps an event log on the device (newest first, at most 200 entries) and
 - Each POST carries at most 200 entries, oldest first. The body has no `project` or `activity` key, so an endpoint must treat a body with `diagnostics` as a diagnostics upload and not as a selection.
 - A response `{"result": "ok", ...}` marks the entries as delivered. Any other response, including an endpoint that does not support diagnostics, leaves the entries on the device for the next attempt.
 - The POST is answered with a redirect and the app follows it with GET, the same as for selections.
-- The configured key is never stored or shown in the log: the `key` query value is replaced by `***`, and only the host of any redirect target is logged.
+- The configured key is stored on the device as part of the endpoint URL, as before. It is never written to the log or shown there: the `key` query value is replaced by `***` in every logged URL and detail, and only the host of any redirect target is logged.
 
 ## Install
 
