@@ -42,7 +42,7 @@ class WidgetControllerTest {
     private val settings = WidgetSettings("https://example.com/exec?key=example", listOf("project-a", "project-b"))
     private val meeting = CellKey("project-a", ActivityKind.MEETING)
 
-    private fun controller(transport: FakeHttpTransport) = WidgetController(context, { transport }) { _, _ -> }
+    private fun controller(transport: FakeHttpTransport) = WidgetController(context, { transport }, { transport }) { _, _ -> }
 
     @Test
     fun tapWithoutSettingsDoesNothing() {
@@ -79,7 +79,7 @@ class WidgetControllerTest {
         KeyValueWidgetSettingsRepository(store).write(settings)
         val rendered = mutableListOf<WidgetSnapshot>()
         val transport = FakeHttpTransport(ArrayDeque(listOf({ throw IllegalStateException("unexpected") })))
-        val controller = WidgetController(context, { transport }) { _, snapshot -> rendered += snapshot }
+        val controller = WidgetController(context, { transport }, { transport }) { _, snapshot -> rendered += snapshot }
         val thrown = runCatching { runBlocking { controller.tap(meeting) } }.exceptionOrNull()
         assertTrue("thrown=$thrown", thrown is IllegalStateException)
         assertTrue("the dashed ring was never rendered", rendered.any { it.sending != null })
@@ -140,10 +140,10 @@ class WidgetControllerTest {
         val publish: (WidgetSettings?, WidgetSnapshot) -> Unit = { _, snapshot ->
             if (snapshot.sending == SelectionRequest.Select(nextCell)) nextTapRendered.countDown()
         }
-        val first = thread { runBlocking { WidgetController(context, { transport }, publish).tap(meeting) } }
+        val first = thread { runBlocking { WidgetController(context, { transport }, { transport }, publish).tap(meeting) } }
         try {
             assertTrue("the first upload started", transport.uploadStarted.await(5, TimeUnit.SECONDS))
-            val second = thread { runBlocking { WidgetController(context, { transport }, publish).tap(nextCell) } }
+            val second = thread { runBlocking { WidgetController(context, { transport }, { transport }, publish).tap(nextCell) } }
             val rendered = nextTapRendered.await(2, TimeUnit.SECONDS)
             transport.releaseUpload.countDown()
             first.join(5_000)

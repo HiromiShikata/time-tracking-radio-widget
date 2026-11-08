@@ -16,6 +16,7 @@ import android.widget.TextView
 import android.widget.Toast
 import com.hiromishikata.timetrackingradio.R
 import com.hiromishikata.timetrackingradio.adapter.http.DiagnosticHttpTransport
+import com.hiromishikata.timetrackingradio.adapter.http.DIAGNOSTICS_UPLOAD_TIMEOUT_MILLIS
 import com.hiromishikata.timetrackingradio.adapter.http.HttpDiagnosticsRepository
 import com.hiromishikata.timetrackingradio.adapter.http.HttpSelectionRepository
 import com.hiromishikata.timetrackingradio.adapter.http.HttpTransport
@@ -109,7 +110,7 @@ class SettingsActivity : Activity() {
             ).execute()
             DiagnosticUploadUseCase(
                 diagnosticLog,
-                HttpDiagnosticsRepository(settings.endpointUrl, transportFactory()),
+                HttpDiagnosticsRepository(settings.endpointUrl, uploadTransportFactory()),
                 recorder,
             ).execute()
             runOnUiThread {
@@ -154,6 +155,9 @@ class SettingsActivity : Activity() {
 
         /** Replaceable by tests; production uses the platform HTTP transport and one background thread. */
         var transportFactory: () -> HttpTransport = { HttpUrlConnectionTransport() }
+        var uploadTransportFactory: () -> HttpTransport = {
+            HttpUrlConnectionTransport(DIAGNOSTICS_UPLOAD_TIMEOUT_MILLIS)
+        }
         var backgroundExecutor: Executor = Executors.newSingleThreadExecutor()
     }
 }

@@ -38,6 +38,7 @@ class SettingsActivityTest {
     private val context: Context = RuntimeEnvironment.getApplication()
     private val endpoint = "https://script.example.com/exec?key=s3cr3t"
     private val originalTransportFactory = SettingsActivity.transportFactory
+    private val originalUploadTransportFactory = SettingsActivity.uploadTransportFactory
     private val originalExecutor = SettingsActivity.backgroundExecutor
 
     @Before
@@ -48,6 +49,7 @@ class SettingsActivityTest {
     @After
     fun restoreDefaults() {
         SettingsActivity.transportFactory = originalTransportFactory
+        SettingsActivity.uploadTransportFactory = originalUploadTransportFactory
         SettingsActivity.backgroundExecutor = originalExecutor
     }
 
@@ -60,6 +62,7 @@ class SettingsActivityTest {
     private fun useTransport(vararg responses: String): FakeHttpTransport {
         val transport = FakeHttpTransport(ArrayDeque(responses.map { body -> { HttpResponse(200, null, body) } }))
         SettingsActivity.transportFactory = { transport }
+        SettingsActivity.uploadTransportFactory = { transport }
         return transport
     }
 
