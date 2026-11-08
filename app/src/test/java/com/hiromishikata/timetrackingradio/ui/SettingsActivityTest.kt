@@ -1,0 +1,96 @@
+package com.hiromishikata.timetrackingradio.ui
+
+import android.app.Activity
+import android.appwidget.AppWidgetManager
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.os.Looper
+import android.widget.Button
+import android.widget.EditText
+import android.widget.TextView
+import com.hiromishikata.timetrackingradio.R
+import com.hiromishikata.timetrackingradio.TestApplication
+import com.hiromishikata.timetrackingradio.adapter.http.FakeHttpTransport
+import com.hiromishikata.timetrackingradio.adapter.http.HttpResponse
+import com.hiromishikata.timetrackingradio.adapter.store.KeyValueDiagnosticLogRepository
+import com.hiromishikata.timetrackingradio.adapter.store.SETTINGS_PREFERENCES_NAME
+import com.hiromishikata.timetrackingradio.adapter.store.SharedPreferencesKeyValueStore
+import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.Robolectric
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
+import java.time.Instant
+import java.util.concurrent.Executor
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34], application = TestApplication::class)
+class SettingsActivityTest {
+    private val context: Context = RuntimeEnvironment.getApplication()
+    private val endpoint = "https://script.example.com/exec?key=s3cr3t"
+    private val originalTransportFactory = SettingsActivity.transportFactory
+    private val originalExecutor = SettingsActivity.backgroundExecutor
+
+    @Before
+    fun runTheConnectionCheckInline() {
+        SettingsActivity.backgroundExecutor = Executor { it.run() }
+    }
+
+    @After
+    fun restoreDefaults() {
+        SettingsActivity.transportFactory = originalTransportFactory
+        SettingsActivity.backgroundExecutor = originalExecutor
+    }
+
+    private fun launch(widgetId: Int? = null): SettingsActivity {
+        val intent = Intent(context, SettingsActivity::class.java)
+        widgetId?.let { intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, it) }
+        return Robolectric.buildActivity(SettingsActivity::class.java, intent).setup().get()
+    }
+
+    private fun useTransport(vararg responses: String): FakeHttpTransport {
+        val transport = FakeHttpTransport(ArrayDeque(responses.map { body -> { HttpResponse(200, null, body) } }))
+        SettingsActivity.transportFactory = { transport }
+        return transport
+    }
+
+    @Test
+    fun aValidSaveShowsTheConnectionOutcomeAndKeepsTheScreenOpen() {
+        val transport = useTransport("""{"result":"ok","selection":null}""", """{"result":"ok","accepted":2}""")
+        val activity = launch(widgetId = 7)
+        activity.findViewById<EditText>(R.id.endpoint_input).setText(endpoint)
+        activity.findViewById<EditText>(R.id.projects_input).setText("project-a\nproject-b")
+        activity.findViewById<Button>(R.id.save_button).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertEquals("Connection OK: no current selection", activity.findViewById<TextView>(R.id.connection_status).text.toString())
+        assertFalse(activity.isFinishing)
+        assertEquals(Activity.RESULT_OK, shadowOf(activity).resultCode)
+        assertEquals(listOf("GET", "POST"), transport.requests.map { it.method })
+        val logText = activity.findViewById<TextView>(R.id.log_text).text.toString()
+        assertTrue(logText, logText.contains(" settings_saved projects=2"))
+        assertTrue(logText, logText.contains(" connection_check connected, no selection"))
+        assertFalse(logText, logText.contains("s3cr3t"))
+    }
+
+    @Test
+    fun copyLogPutsTheWholeLogOnTheClipboard() {
+        KeyValueDiagnosticLogRepository(
+            SharedPreferencesKeyValueStore(context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE)),
+        ).append(Instant.parse("2026-11-08T00:01:00Z"), DiagnosticEventType.TAP_RECEIVED, "project=a, activity=work")
+        val activity = launch()
+        val expected = "2026-11-08T00:01:00Z tap_received project=a, activity=work"
+        assertEquals(expected, activity.findViewById<TextView>(R.id.log_text).text.toString())
+        activity.findViewById<Button>(R.id.copy_log_button).performClick()
+        assertEquals(expected, context.getSystemService(ClipboardManager::class.java).primaryClip!!.getItemAt(0).text.toString())
+    }
+}
