@@ -1,6 +1,7 @@
 package com.hiromishikata.timetrackingradio.adapter.widget
 
 import android.content.Context
+import androidx.work.Configuration
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.testing.WorkManagerTestInitHelper
@@ -13,6 +14,9 @@ import com.hiromishikata.timetrackingradio.adapter.store.SETTINGS_PREFERENCES_NA
 import com.hiromishikata.timetrackingradio.adapter.store.SharedPreferencesKeyValueStore
 import com.hiromishikata.timetrackingradio.domain.WidgetSettings
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 internal val WIDGET_TEST_SETTINGS = WidgetSettings("https://example.com/exec?key=example", listOf("project-a", "project-b"))
 
@@ -64,15 +68,36 @@ internal fun installWorkManagerForTests(context: Context) {
     WorkManagerTestInitHelper.initializeTestWorkManager(context)
 }
 
-internal fun uniqueWorkInfos(context: Context, uniqueWorkName: String): List<WorkInfo> =
-    WorkManager.getInstance(context).getWorkInfosForUniqueWork(uniqueWorkName).get()
+internal fun installWorkManagerWithControlledExecutor(context: Context): ExecutorService {
+    val executor = Executors.newSingleThreadExecutor { Thread(it, "widget-work-test").apply { isDaemon = true } }
+    WorkManagerTestInitHelper.initializeTestWorkManager(context, Configuration.Builder().setExecutor(executor).build())
+    return executor
+}
 
-internal fun awaitWorkFinished(context: Context, uniqueWorkName: String, timeoutMillis: Long = 5_000) {
+internal fun uniqueWorkInfos(context: Context, uniqueWorkName: String, timeoutMillis: Long = 5_000): List<WorkInfo> =
+    WorkManager.getInstance(context).getWorkInfosForUniqueWork(uniqueWorkName)
+        .get(timeoutMillis, TimeUnit.MILLISECONDS)
+
+internal fun awaitUniqueWork(
+    context: Context,
+    uniqueWorkName: String,
+    what: String,
+    timeoutMillis: Long = 5_000,
+    condition: (List<WorkInfo>) -> Boolean,
+): List<WorkInfo> {
     val deadline = System.currentTimeMillis() + timeoutMillis
-    while (uniqueWorkInfos(context, uniqueWorkName).any { !it.state.isFinished }) {
-        check(System.currentTimeMillis() < deadline) { "work under $uniqueWorkName did not finish" }
+    while (true) {
+        val infos = uniqueWorkInfos(context, uniqueWorkName)
+        if (condition(infos)) return infos
+        check(System.currentTimeMillis() < deadline) {
+            "$what did not happen under $uniqueWorkName within $timeoutMillis ms; last states: ${infos.map { it.state }}"
+        }
         Thread.sleep(10)
     }
+}
+
+internal fun awaitWorkFinished(context: Context, uniqueWorkName: String, timeoutMillis: Long = 5_000) {
+    awaitUniqueWork(context, uniqueWorkName, "work finishing", timeoutMillis) { infos -> infos.all { it.state.isFinished } }
 }
 
 internal fun installHarmlessWidgetWorkFactories() {
