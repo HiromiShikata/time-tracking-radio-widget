@@ -2,7 +2,6 @@ package com.hiromishikata.timetrackingradio.adapter.widget
 
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
-import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -10,13 +9,11 @@ import android.util.Log
 import com.hiromishikata.timetrackingradio.domain.ActivityKind
 import com.hiromishikata.timetrackingradio.domain.CellKey
 import com.hiromishikata.timetrackingradio.domain.describeFailure
-import kotlinx.coroutines.launch
 
 class SelectionWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        val controller = WidgetController(context)
-        controller.render()
-        launchAsync(this) { controller.refresh() }
+        controllerFactory(context).render()
+        WidgetWorkScheduler.enqueueRefresh(context)
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -30,14 +27,17 @@ class SelectionWidgetProvider : AppWidgetProvider() {
             Log.e(LOG_TAG, "tap intent has no valid cell")
             return
         }
-        val controller = WidgetController(context)
-        launchAsync(this) { controller.tap(CellKey(project, activity)) }
+        val cell = CellKey(project, activity)
+        controllerFactory(context).acceptTap(cell)
+        WidgetWorkScheduler.enqueueTap(context, cell)
     }
 
     companion object {
         const val ACTION_CELL_TAP = "com.hiromishikata.timetrackingradio.action.CELL_TAP"
         const val EXTRA_PROJECT = "com.hiromishikata.timetrackingradio.extra.PROJECT"
         const val EXTRA_ACTIVITY = "com.hiromishikata.timetrackingradio.extra.ACTIVITY"
+
+        var controllerFactory: (Context) -> WidgetController = { WidgetController(it) }
 
         fun requestUpdate(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
@@ -47,19 +47,6 @@ class SelectionWidgetProvider : AppWidgetProvider() {
                     .setAction(AppWidgetManager.ACTION_APPWIDGET_UPDATE)
                     .putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids),
             )
-        }
-    }
-}
-
-private fun launchAsync(receiver: BroadcastReceiver, block: suspend () -> Unit) {
-    val pending = receiver.goAsync()
-    WidgetScope.scope.launch {
-        try {
-            block()
-        } catch (failure: Exception) {
-            logWidgetWorkFailure(failure)
-        } finally {
-            pending.finish()
         }
     }
 }

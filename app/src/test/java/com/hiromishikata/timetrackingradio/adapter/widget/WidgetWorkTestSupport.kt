@@ -1,0 +1,113 @@
+package com.hiromishikata.timetrackingradio.adapter.widget
+
+import android.content.Context
+import androidx.work.Configuration
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import androidx.work.testing.WorkManagerTestInitHelper
+import com.hiromishikata.timetrackingradio.adapter.http.HttpRequest
+import com.hiromishikata.timetrackingradio.adapter.http.HttpResponse
+import com.hiromishikata.timetrackingradio.adapter.http.HttpTransport
+import com.hiromishikata.timetrackingradio.adapter.store.KeyValueDiagnosticLogRepository
+import com.hiromishikata.timetrackingradio.adapter.store.KeyValueWidgetSnapshotRepository
+import com.hiromishikata.timetrackingradio.adapter.store.SETTINGS_PREFERENCES_NAME
+import com.hiromishikata.timetrackingradio.adapter.store.SharedPreferencesKeyValueStore
+import com.hiromishikata.timetrackingradio.domain.WidgetSettings
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+
+internal val WIDGET_TEST_SETTINGS = WidgetSettings("https://example.com/exec?key=example", listOf("project-a", "project-b"))
+
+private val SELECTED_PROJECT = Regex("\"project\":\"([^\"]+)\"")
+private val SELECTED_ACTIVITY = Regex("\"activity\":\"([^\"]+)\"")
+
+internal class ForbiddenTransport : HttpTransport {
+    var calls = 0
+        private set
+
+    override fun send(request: HttpRequest): HttpResponse {
+        calls += 1
+        throw AssertionError("no network call is allowed on this path: ${request.method}")
+    }
+}
+
+internal class EchoSelectionTransport(private val beforeReply: (HttpRequest) -> Unit = {}) : HttpTransport {
+    val requests: MutableList<HttpRequest> = CopyOnWriteArrayList()
+
+    override fun send(request: HttpRequest): HttpResponse {
+        requests += request
+        beforeReply(request)
+        val body = request.body.orEmpty()
+        val project = SELECTED_PROJECT.find(body)?.groupValues?.get(1)
+        val activity = SELECTED_ACTIVITY.find(body)?.groupValues?.get(1)
+        return when {
+            body.startsWith("{\"diagnostics\"") -> HttpResponse(200, null, """{"result":"ok","accepted":1}""")
+            request.method == "GET" || project == null || activity == null ->
+                HttpResponse(200, null, """{"result":"ok","selection":null}""")
+            else -> HttpResponse(
+                200,
+                null,
+                """{"result":"ok","selection":{"project":"$project","activity":"$activity","since":"2026-11-07T08:39:00Z"}}""",
+            )
+        }
+    }
+}
+
+internal fun selectedProjectOf(request: HttpRequest): String? = SELECTED_PROJECT.find(request.body.orEmpty())?.groupValues?.get(1)
+
+internal fun widgetPreferences(context: Context) =
+    SharedPreferencesKeyValueStore(context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE))
+
+internal fun widgetSnapshots(context: Context) = KeyValueWidgetSnapshotRepository(widgetPreferences(context))
+
+internal fun widgetDiagnosticLog(context: Context) = KeyValueDiagnosticLogRepository(widgetPreferences(context))
+
+internal fun installWorkManagerForTests(context: Context) {
+    WorkManagerTestInitHelper.initializeTestWorkManager(context)
+}
+
+internal fun installWorkManagerWithControlledExecutor(context: Context): ExecutorService {
+    val executor = Executors.newSingleThreadExecutor { Thread(it, "widget-work-test").apply { isDaemon = true } }
+    WorkManagerTestInitHelper.initializeTestWorkManager(context, Configuration.Builder().setExecutor(executor).build())
+    return executor
+}
+
+internal fun uniqueWorkInfos(context: Context, uniqueWorkName: String, timeoutMillis: Long = 30_000): List<WorkInfo> =
+    WorkManager.getInstance(context).getWorkInfosForUniqueWork(uniqueWorkName)
+        .get(timeoutMillis, TimeUnit.MILLISECONDS)
+
+internal fun awaitUniqueWork(
+    context: Context,
+    uniqueWorkName: String,
+    what: String,
+    timeoutMillis: Long = 30_000,
+    condition: (List<WorkInfo>) -> Boolean,
+): List<WorkInfo> {
+    val deadline = System.currentTimeMillis() + timeoutMillis
+    while (true) {
+        val infos = uniqueWorkInfos(context, uniqueWorkName)
+        if (condition(infos)) return infos
+        check(System.currentTimeMillis() < deadline) {
+            "$what did not happen under $uniqueWorkName within $timeoutMillis ms; last states: ${infos.map { it.state }}"
+        }
+        Thread.sleep(10)
+    }
+}
+
+internal fun awaitWorkFinished(context: Context, uniqueWorkName: String, timeoutMillis: Long = 30_000) {
+    awaitUniqueWork(context, uniqueWorkName, "work finishing", timeoutMillis) { infos -> infos.all { it.state.isFinished } }
+}
+
+internal fun installHarmlessWidgetWorkFactories() {
+    SelectionWidgetProvider.controllerFactory = { WidgetController(it, { EchoSelectionTransport() }, { EchoSelectionTransport() }, publish = { _, _ -> }) }
+    WidgetSelectionWorker.controllerFactory = { WidgetController(it, { EchoSelectionTransport() }, { EchoSelectionTransport() }, publish = { _, _ -> }) }
+    WidgetDiagnosticsUploadWorker.controllerFactory = { WidgetController(it, { EchoSelectionTransport() }, { EchoSelectionTransport() }, publish = { _, _ -> }) }
+}
+
+internal fun restoreDefaultWidgetFactories() {
+    SelectionWidgetProvider.controllerFactory = { WidgetController(it) }
+    WidgetSelectionWorker.controllerFactory = { WidgetController(it) }
+    WidgetDiagnosticsUploadWorker.controllerFactory = { WidgetController(it) }
+}
