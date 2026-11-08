@@ -9,6 +9,8 @@ import com.hiromishikata.timetrackingradio.adapter.store.SETTINGS_PREFERENCES_NA
 import com.hiromishikata.timetrackingradio.adapter.store.SharedPreferencesKeyValueStore
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -16,6 +18,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowLog
+import java.net.URISyntaxException
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = TestApplication::class)
@@ -45,5 +48,15 @@ class SelectionWidgetProviderTest {
                 KeyValueWidgetSnapshotRepository(SharedPreferencesKeyValueStore(context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE))).read(),
             )
         }
+    }
+
+    @Test
+    fun aWidgetWorkFailureIsLoggedWithoutItsQueryOrThrowable() {
+        ShadowLog.clear()
+        logWidgetWorkFailure(URISyntaxException("https://script.example.com/exec?key=SECRET123 x", "Illegal character in query"))
+        val entries = ShadowLog.getLogsForTag("SelectionWidget").filter { it.type == Log.ERROR }
+        assertEquals(1, entries.size)
+        assertNull(entries.single().throwable)
+        assertFalse(entries.single().msg.contains("SECRET123"))
     }
 }
