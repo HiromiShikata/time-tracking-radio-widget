@@ -3,6 +3,9 @@ package com.hiromishikata.timetrackingradio.adapter.http
 import java.net.HttpURLConnection
 import java.net.URL
 
+/** Connect and read timeout for the diagnostics upload, so a stalled endpoint cannot hold a tap for long. */
+const val DIAGNOSTICS_UPLOAD_TIMEOUT_MILLIS = 5_000
+
 class HttpUrlConnectionTransport(private val timeoutMillis: Int = 10_000) : HttpTransport {
     override fun send(request: HttpRequest): HttpResponse {
         val connection = URL(request.url).openConnection() as HttpURLConnection

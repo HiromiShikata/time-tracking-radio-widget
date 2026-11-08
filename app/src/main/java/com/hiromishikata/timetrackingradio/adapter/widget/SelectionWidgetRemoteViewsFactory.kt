@@ -21,6 +21,7 @@ class SelectionWidgetRemoteViewsFactory(private val context: Context) {
     fun build(settings: WidgetSettings?, snapshot: WidgetSnapshot, now: Instant): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_grid)
         val projects = settings?.projects.orEmpty()
+        views.removeAllViews(R.id.grid_rows)
         projects.forEachIndexed { rowIndex, project ->
             views.addView(R.id.grid_rows, buildRow(rowIndex, project, snapshot))
         }

@@ -23,4 +23,14 @@
     <string name="update_download_failed">Could not download the update.</string>
     <string name="cell_description_work">work cell</string>
     <string name="cell_description_meeting">meeting cell</string>
+    <string name="connection_checking">Checking the connection…</string>
+    <string name="connection_ok_no_selection">Connection OK: no current selection</string>
+    <string name="connection_ok_selection">Connection OK: %1$s / %2$s since %3$s UTC</string>
+    <string name="connection_server_rejected">Server reported an error: %1$s</string>
+    <string name="connection_failed">Connection failed: %1$s</string>
+    <string name="log_title">Diagnostic log (newest first)</string>
+    <string name="log_empty">No log entries yet.</string>
+    <string name="copy_log">Copy log</string>
+    <string name="log_copied">Log copied to the clipboard.</string>
+    <string name="problem_endpoint_not_a_uri">The endpoint URL contains a character that is not allowed in a URL.</string>
 </resources>

@@ -30,16 +30,30 @@ A successful response:
 - `activity` is `work` or `meeting`. `since` is ISO-8601 in UTC with a trailing `Z`.
 - A POST is answered with a redirect. The app follows the redirect with GET to read the result.
 
+### Diagnostics (optional endpoint contract)
+
+The app keeps an event log on the device (newest first, at most 200 entries) and shows it on the settings screen, where **Copy log** copies the whole text. After every widget request (a tap or a refresh) and after every connection check, the app POSTs the entries it has not delivered yet to the same endpoint URL:
+
+```json
+{"diagnostics": [{"at": "2026-11-08T00:14:00Z", "event": "tap_received", "detail": "project=project-a, activity=work"}]}
+```
+
+- Each POST carries at most 200 entries, oldest first. The body has no `project` or `activity` key, so an endpoint must treat a body with `diagnostics` as a diagnostics upload and not as a selection.
+- A response `{"result": "ok", ...}` marks the entries as delivered. Any other response, including an endpoint that does not support diagnostics, leaves the entries on the device for the next attempt.
+- The POST is answered with a redirect and the app follows it with GET, the same as for selections.
+- The configured key is stored on the device as part of the endpoint URL, as before. It is never written to the log or shown there: the `key` query value is replaced by `***` in every logged URL and detail, and only the host of any redirect target is logged.
+
 ## Install
 
 1. Open the [Releases page](https://github.com/HiromiShikata/time-tracking-radio-widget/releases) on the device and download the APK of the latest release.
 2. Allow installing apps from this source when Android asks.
 3. Open the app from the launcher, enter the endpoint URL and the projects (one per line), and tap Save.
-4. Add the widget to the home screen. The settings screen opens as its configuration screen.
+4. The settings screen checks the connection and shows the outcome under the Save button. It stays open; leave it with Back.
+5. Add the widget to the home screen. The settings screen opens as its configuration screen.
 
 ## Settings
 
-The endpoint URL must start with `https://`. Project names must be non-empty and unique. The settings are stored only in the app's private storage. Backups and device transfers exclude them.
+The endpoint URL must start with `https://`. Project names must be non-empty and unique. The settings and the event log are stored only in the app's private storage. Backups and device transfers exclude them.
 
 ## Updates
 

@@ -23,4 +23,14 @@
     <string name="update_download_failed">アップデートをダウンロードできませんでした。</string>
     <string name="cell_description_work">work の欄</string>
     <string name="cell_description_meeting">meeting の欄</string>
+    <string name="connection_checking">接続を確認しています…</string>
+    <string name="connection_ok_no_selection">接続 OK: 現在の選択はありません</string>
+    <string name="connection_ok_selection">接続 OK: %1$s / %2$s  %3$s UTC から記録中</string>
+    <string name="connection_server_rejected">サーバーがエラーを返しました: %1$s</string>
+    <string name="connection_failed">接続できませんでした: %1$s</string>
+    <string name="log_title">診断ログ（新しい順）</string>
+    <string name="log_empty">ログはまだありません。</string>
+    <string name="copy_log">ログをコピー</string>
+    <string name="log_copied">ログをクリップボードにコピーしました。</string>
+    <string name="problem_endpoint_not_a_uri">エンドポイント URL に URL として使えない文字が含まれています。</string>
 </resources>

@@ -9,6 +9,7 @@ import android.content.Intent
 import android.util.Log
 import com.hiromishikata.timetrackingradio.domain.ActivityKind
 import com.hiromishikata.timetrackingradio.domain.CellKey
+import com.hiromishikata.timetrackingradio.domain.describeFailure
 import kotlinx.coroutines.launch
 
 class SelectionWidgetProvider : AppWidgetProvider() {
@@ -26,7 +27,7 @@ class SelectionWidgetProvider : AppWidgetProvider() {
         val project = intent.getStringExtra(EXTRA_PROJECT)
         val activity = ActivityKind.fromCode(intent.getStringExtra(EXTRA_ACTIVITY).orEmpty())
         if (project == null || activity == null) {
-            Log.e(TAG, "tap intent has no valid cell")
+            Log.e(LOG_TAG, "tap intent has no valid cell")
             return
         }
         val controller = WidgetController(context)
@@ -37,7 +38,6 @@ class SelectionWidgetProvider : AppWidgetProvider() {
         const val ACTION_CELL_TAP = "com.hiromishikata.timetrackingradio.action.CELL_TAP"
         const val EXTRA_PROJECT = "com.hiromishikata.timetrackingradio.extra.PROJECT"
         const val EXTRA_ACTIVITY = "com.hiromishikata.timetrackingradio.extra.ACTIVITY"
-        private const val TAG = "SelectionWidget"
 
         fun requestUpdate(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
@@ -57,9 +57,16 @@ private fun launchAsync(receiver: BroadcastReceiver, block: suspend () -> Unit) 
         try {
             block()
         } catch (failure: Exception) {
-            Log.e("SelectionWidget", "widget work failed", failure)
+            logWidgetWorkFailure(failure)
         } finally {
             pending.finish()
         }
     }
+}
+
+private const val LOG_TAG = "SelectionWidget"
+
+/** Logs the class and the redacted message only. The throwable itself is never logged: its message can carry the endpoint key. */
+internal fun logWidgetWorkFailure(failure: Throwable) {
+    Log.e(LOG_TAG, "widget work failed: ${describeFailure(failure)}")
 }

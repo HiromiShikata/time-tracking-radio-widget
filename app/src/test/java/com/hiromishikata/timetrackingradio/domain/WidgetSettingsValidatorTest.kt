@@ -7,6 +7,12 @@ class WidgetSettingsValidatorTest {
     private val endpoint = "https://script.example.com/macros/s/key-value/exec/time-tracking-selection?key=k"
 
     @Test
+    fun anEndpointThatJavaNetUriRejectsIsRejectedOnSave() {
+        val result = validateWidgetSettings("https://script.example.com/exec?key=a b", "project-a")
+        assertEquals(listOf("ENDPOINT_NOT_A_URI"), (result as? WidgetSettingsValidation.Invalid)?.problems?.map { it.name })
+    }
+
+    @Test
     fun validatesEndpointAndProjectList() {
         val cases = listOf(
             Triple(endpoint, "project-a\nproject-b", WidgetSettingsValidation.Valid(WidgetSettings(endpoint, listOf("project-a", "project-b")))),

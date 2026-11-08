@@ -5,13 +5,17 @@ import com.hiromishikata.timetrackingradio.TestApplication
 import com.hiromishikata.timetrackingradio.adapter.http.FakeHttpTransport
 import com.hiromishikata.timetrackingradio.adapter.http.HttpRequest
 import com.hiromishikata.timetrackingradio.adapter.http.HttpResponse
+import com.hiromishikata.timetrackingradio.adapter.http.HttpTransport
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueWidgetSettingsRepository
+import com.hiromishikata.timetrackingradio.adapter.store.KeyValueDiagnosticLogRepository
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueWidgetSnapshotRepository
 import com.hiromishikata.timetrackingradio.adapter.store.SETTINGS_PREFERENCES_NAME
 import com.hiromishikata.timetrackingradio.adapter.store.SharedPreferencesKeyValueStore
 import com.hiromishikata.timetrackingradio.domain.ActivityKind
+import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
 import com.hiromishikata.timetrackingradio.domain.CellKey
 import com.hiromishikata.timetrackingradio.domain.Selection
+import com.hiromishikata.timetrackingradio.domain.SelectionRequest
 import com.hiromishikata.timetrackingradio.domain.WidgetOutcome
 import com.hiromishikata.timetrackingradio.domain.WidgetSettings
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
@@ -26,6 +30,9 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.io.IOException
 import java.time.Instant
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = TestApplication::class)
@@ -35,7 +42,7 @@ class WidgetControllerTest {
     private val settings = WidgetSettings("https://example.com/exec?key=example", listOf("project-a", "project-b"))
     private val meeting = CellKey("project-a", ActivityKind.MEETING)
 
-    private fun controller(transport: FakeHttpTransport) = WidgetController(context, { transport }) { _, _ -> }
+    private fun controller(transport: FakeHttpTransport) = WidgetController(context, { transport }, { transport }) { _, _ -> }
 
     @Test
     fun tapWithoutSettingsDoesNothing() {
@@ -54,7 +61,7 @@ class WidgetControllerTest {
         runBlocking { controller(transport).tap(meeting) }
         val stored = KeyValueWidgetSnapshotRepository(store).read()
         assertEquals(WidgetSnapshot(Selection(meeting, since), stored.fetchedAt, WidgetOutcome.Settled, null), stored)
-        assertEquals(1, transport.requests.count { it.method == "POST" })
+        assertEquals(1, transport.requests.count { it.method == "POST" && it.body?.startsWith("{\"project\":") == true })
     }
 
     @Test
@@ -72,10 +79,113 @@ class WidgetControllerTest {
         KeyValueWidgetSettingsRepository(store).write(settings)
         val rendered = mutableListOf<WidgetSnapshot>()
         val transport = FakeHttpTransport(ArrayDeque(listOf({ throw IllegalStateException("unexpected") })))
-        val controller = WidgetController(context, { transport }) { _, snapshot -> rendered += snapshot }
+        val controller = WidgetController(context, { transport }, { transport }) { _, snapshot -> rendered += snapshot }
         val thrown = runCatching { runBlocking { controller.tap(meeting) } }.exceptionOrNull()
         assertTrue("thrown=$thrown", thrown is IllegalStateException)
         assertTrue("the dashed ring was never rendered", rendered.any { it.sending != null })
         assertNull("the last rendered screen still shows a sending cell", rendered.last().sending)
+    }
+
+    @Test
+    fun aTapRecordsItsEventAndUploadsTheDiagnosticsAfterwards() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val selection = """{"result":"ok","selection":null}"""
+        val transport = FakeHttpTransport(
+            ArrayDeque(listOf({ HttpResponse(200, null, selection) }, { HttpResponse(200, null, """{"result":"ok","accepted":3}""") })),
+        )
+        runBlocking { controller(transport).tap(meeting) }
+        val upload = transport.requests.last()
+        assertEquals("POST", upload.method)
+        assertTrue(upload.body.orEmpty().startsWith("{\"diagnostics\":["))
+        assertTrue(upload.body.orEmpty().contains("\"detail\":\"project=project-a, activity=meeting\""))
+        val tapEntry = KeyValueDiagnosticLogRepository(store).readAll().single { it.type == DiagnosticEventType.TAP_RECEIVED }
+        assertTrue(tapEntry.delivered)
+    }
+
+    @Test
+    fun aTapThatFailsUnexpectedlyStillUploadsItsDiagnostics() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val transport = FakeHttpTransport(
+            ArrayDeque<() -> HttpResponse>(
+                listOf(
+                    { throw IllegalStateException("unexpected") },
+                    { HttpResponse(200, null, """{"result":"ok","accepted":1}""") },
+                ),
+            ),
+        )
+        val thrown = runCatching { runBlocking { controller(transport).tap(meeting) } }.exceptionOrNull()
+        assertTrue("thrown=$thrown", thrown is IllegalStateException)
+        assertTrue(transport.requests.last().body.orEmpty().startsWith("{\"diagnostics\":["))
+        assertTrue(KeyValueDiagnosticLogRepository(store).readAll().single { it.type == DiagnosticEventType.TAP_RECEIVED }.delivered)
+    }
+
+    @Test
+    fun aRefreshIsFollowedByADiagnosticsPost() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val transport = FakeHttpTransport(
+            ArrayDeque<() -> HttpResponse>(
+                listOf(
+                    { HttpResponse(200, null, """{"result":"ok","selection":null}""") },
+                    { HttpResponse(200, null, """{"result":"ok","accepted":1}""") },
+                ),
+            ),
+        )
+        runBlocking { controller(transport).refresh() }
+        assertEquals(listOf("GET", "POST"), transport.requests.map { it.method })
+        val upload = transport.requests.last().body.orEmpty()
+        assertTrue(upload.startsWith("{\"diagnostics\":["))
+        assertTrue(upload.contains("\"event\":\"widget_update_requested\""))
+    }
+
+    @Test
+    fun aTapWithoutSettingsRecordsTheTapAndSendsNothing() {
+        val transport = FakeHttpTransport(ArrayDeque())
+        runBlocking { controller(transport).tap(meeting) }
+        assertEquals(listOf("tap_received"), KeyValueDiagnosticLogRepository(store).readAll().map { it.type.code })
+        assertEquals(emptyList<HttpRequest>(), transport.requests)
+    }
+
+    @Test
+    fun refreshRecordsTheUpdateRequest() {
+        val transport = FakeHttpTransport(ArrayDeque())
+        runBlocking { controller(transport).refresh() }
+        assertEquals(listOf("widget_update_requested"), KeyValueDiagnosticLogRepository(store).readAll().map { it.type.code })
+    }
+
+    private class BlockingUploadTransport(private val selectionBody: String) : HttpTransport {
+        val uploadStarted = CountDownLatch(1)
+        val releaseUpload = CountDownLatch(1)
+
+        override fun send(request: HttpRequest): HttpResponse {
+            if (request.body?.startsWith("{\"diagnostics\"") == true) {
+                uploadStarted.countDown()
+                releaseUpload.await(10, TimeUnit.SECONDS)
+                return HttpResponse(200, null, """{"result":"ok","accepted":1}""")
+            }
+            return HttpResponse(200, null, selectionBody)
+        }
+    }
+
+    @Test
+    fun aSlowDiagnosticsUploadDoesNotDelayTheNextTapsSendingRender() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val transport = BlockingUploadTransport("""{"result":"ok","selection":null}""")
+        val nextCell = CellKey("project-b", ActivityKind.WORK)
+        val nextTapRendered = CountDownLatch(1)
+        val publish: (WidgetSettings?, WidgetSnapshot) -> Unit = { _, snapshot ->
+            if (snapshot.sending == SelectionRequest.Select(nextCell)) nextTapRendered.countDown()
+        }
+        val first = thread { runBlocking { WidgetController(context, { transport }, { transport }, publish).tap(meeting) } }
+        try {
+            assertTrue("the first upload started", transport.uploadStarted.await(5, TimeUnit.SECONDS))
+            val second = thread { runBlocking { WidgetController(context, { transport }, { transport }, publish).tap(nextCell) } }
+            val rendered = nextTapRendered.await(2, TimeUnit.SECONDS)
+            transport.releaseUpload.countDown()
+            first.join(5_000)
+            second.join(5_000)
+            assertTrue("the next tap rendered its sending state while the upload was still blocked", rendered)
+        } finally {
+            transport.releaseUpload.countDown()
+        }
     }
 }
