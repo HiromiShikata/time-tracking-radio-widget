@@ -730,7 +730,7 @@ class WidgetControllerTest {
         val last = rendered.last()
         val status = renderedStatusText(context, last)
         assertEquals(SelectionRequest.Clear, last.sending)
-        assertEquals(R.drawable.cell_sending, renderedCellDrawableResId(context, last, meeting))
+        assertFalse("the later pending tap is a clear, so no selection ring is shown on the cell", renderedCellDrawableResId(context, last, meeting) == R.drawable.cell_sending)
         assertTrue("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
     }
 

@@ -30,7 +30,7 @@ class WidgetWorkBelowAndroid12Test {
     private val meeting = CellKey("project-a", ActivityKind.MEETING)
 
     private fun acceptedTapAt(cell: CellKey): Instant =
-        WidgetController(context, publish = { _, _ -> }).acceptTap(cell, workEnqueued = true)
+        WidgetController(context, publish = { _, _ -> }).acceptTap(cell, workEnqueued = true).tappedAt
 
     @Before
     fun setUp() {
