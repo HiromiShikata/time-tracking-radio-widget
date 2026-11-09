@@ -36,6 +36,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.io.IOException
+import java.net.MalformedURLException
 import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
@@ -721,7 +722,7 @@ class WidgetControllerTest {
         KeyValueWidgetSettingsRepository(store).write(settings)
         var now = tappedAt
         val rendered = mutableListOf<WidgetSnapshot>()
-        val transport = FakeHttpTransport(ArrayDeque<() -> HttpResponse>(listOf({ HttpResponse(200, null, clearedBody) })))
+        val transport = FakeHttpTransport(ArrayDeque<() -> HttpResponse>(listOf({ HttpResponse(200, null, selectedMeetingBody) })))
         val controller = recordingController(transport, rendered) { now }
         val firstAccepted = controller.acceptTap(meeting, workEnqueued = true)
         now = tappedAt.plusSeconds(1)
@@ -730,7 +731,7 @@ class WidgetControllerTest {
         val last = rendered.last()
         val status = renderedStatusText(context, last)
         assertEquals(SelectionRequest.Clear, last.sending)
-        assertFalse("the later pending tap is a clear, so no selection ring is shown on the cell", renderedCellDrawableResId(context, last, meeting) == R.drawable.cell_sending)
+        assertEquals("the pending Clear still shows the sending ring on the meeting cell", R.drawable.cell_sending, renderedCellDrawableResId(context, last, meeting))
         assertTrue("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
     }
 
@@ -792,7 +793,95 @@ class WidgetControllerTest {
             assertEquals("case=${case.name}", case.expectedRequest, accepted.request)
         }
     }
+
+    private data class TerminalTapCase(val name: String, val transportFailure: Throwable?, val runsThroughWorker: Boolean)
+
+    private data class BackstopCase(val name: String, val daysAfterPendingTap: Long, val expectedProbe: SelectionRequest)
+
+    @Test
+    fun aStampedTapWhoseSettingsAreAbsentWhenItsWorkRunsStopsProjectingItsRequest() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val transport = ForbiddenTransport()
+        val accepted = recordingController(transport, mutableListOf()).acceptTap(meeting, workEnqueued = true)
+        val input = storedTapInput(context, meeting, accepted.tappedAt, accepted.request)
+        store.write(WIDGET_ENDPOINT_PREFERENCE_KEY, null)
+        val result = runStoredTap(input, transport)
+        assertTrue("result=$result", result is ListenableWorker.Result.Success)
+        assertEquals("no network call is made without settings", 0, transport.calls)
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val probe = recordingController(ForbiddenTransport(), mutableListOf()).acceptTap(meeting, workEnqueued = false)
+        assertEquals(SelectionRequest.Select(meeting), probe.request)
+    }
+
+    @Test
+    fun everyTerminalPathOfAStampedTapRemovesItsEntryAndTheSameCellSelectsAgain() {
+        val cases = listOf(
+            TerminalTapCase("a final failure", MalformedURLException("bad endpoint"), runsThroughWorker = true),
+            TerminalTapCase("a success", null, runsThroughWorker = true),
+            TerminalTapCase("an Error that is not an Exception", AssertionError("boom"), runsThroughWorker = false),
+        )
+        cases.forEach { case ->
+            context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE).edit().clear().commit()
+            KeyValueWidgetSettingsRepository(store).write(settings)
+            val respond: () -> HttpResponse = {
+                val failure = case.transportFailure
+                if (failure != null) throw failure
+                HttpResponse(200, null, clearedBody)
+            }
+            val transport = FakeHttpTransport(ArrayDeque(listOf(respond)))
+            val controller = recordingController(transport, mutableListOf()) { tappedAt }
+            val accepted = controller.acceptTap(meeting, workEnqueued = true)
+            if (case.runsThroughWorker) {
+                val input = storedTapInput(context, meeting, accepted.tappedAt, accepted.request)
+                val result = runStoredTap(input, transport)
+                assertTrue("case=${case.name} result=$result", result is ListenableWorker.Result.Success)
+            } else {
+                val thrown = try {
+                    runBlocking { controller.performTap(meeting, accepted.request, accepted.tappedAt) }
+                    null
+                } catch (error: AssertionError) {
+                    error
+                }
+                assertEquals("case=${case.name}", "boom", thrown?.message)
+            }
+            val probe = controller.acceptTap(meeting, workEnqueued = false)
+            assertEquals("case=${case.name}", SelectionRequest.Select(meeting), probe.request)
+        }
+    }
+
+    @Test
+    fun aTapWhoseNetworkAttemptFailsKeepsItsEntryAndTheSameCellStillClears() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val transport = FakeHttpTransport(ArrayDeque<() -> HttpResponse>(listOf({ throw IOException("unreachable") })))
+        val controller = recordingController(transport, mutableListOf()) { tappedAt }
+        val accepted = controller.acceptTap(meeting, workEnqueued = true)
+        val result = runStoredTap(storedTapInput(context, meeting, accepted.tappedAt, accepted.request), transport)
+        assertTrue("result=$result", result is ListenableWorker.Result.Retry)
+        val probe = controller.acceptTap(meeting, workEnqueued = false)
+        assertEquals(SelectionRequest.Clear, probe.request)
+    }
+
+    @Test
+    fun aPendingEntryStopsProjectingItsRequestOnlyAfterSevenDays() {
+        val pendingCell = CellKey("project-c", ActivityKind.MEETING)
+        val cases = listOf(
+            BackstopCase("six days after the pending tap the entry still projects its selection, so the probe clears", 6, SelectionRequest.Clear),
+            BackstopCase("eight days after the pending tap the entry is dropped, so the probe selects", 8, SelectionRequest.Select(pendingCell)),
+        )
+        cases.forEach { case ->
+            context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE).edit().clear().commit()
+            KeyValueWidgetSettingsRepository(store).write(settings)
+            val clock = AtomicReference(acceptedAt)
+            val controller = recordingController(ForbiddenTransport(), mutableListOf()) { clock.get() }
+            controller.acceptTap(pendingCell, workEnqueued = true)
+            clock.set(acceptedAt.plusSeconds(case.daysAfterPendingTap * 24 * 60 * 60))
+            val probe = controller.acceptTap(pendingCell, workEnqueued = false)
+            assertEquals("case=${case.name}", case.expectedProbe, probe.request)
+        }
+    }
 }
+
+private const val WIDGET_ENDPOINT_PREFERENCE_KEY = "endpoint_url"
 
 private const val SELECT_PROJECT_A_WORK_BODY_AT_TAPPED_AT = """{"project":"project-a","activity":"work","tappedAt":"2026-11-09T02:19:03.112Z"}"""
 
