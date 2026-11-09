@@ -85,6 +85,7 @@ class SelectionWidgetRemoteViewsFactory(private val context: Context) {
             formatUtcHourMinute(status.selection.since),
         )
         WidgetStatus.NotRecording -> context.getString(R.string.status_not_recording)
+        WidgetStatus.WaitingForNetwork -> context.getString(R.string.status_waiting_for_network)
         is WidgetStatus.Switching -> context.getString(
             R.string.status_switching,
             status.cell.project,

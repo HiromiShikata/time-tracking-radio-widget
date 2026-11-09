@@ -6,6 +6,7 @@
     <string name="status_recording">Recording %1$s / %2$s since %3$s UTC</string>
     <string name="status_not_recording">Not recording</string>
     <string name="status_switching">Switching to %1$s / %2$s…</string>
+    <string name="status_waiting_for_network">Waiting for network to send your selection…</string>
     <string name="status_unreachable">⚠ Could not connect (showing state as of %1$s UTC)</string>
     <string name="status_server_rejected">⚠ %1$s</string>
     <string name="settings_title">Settings</string>

@@ -19,9 +19,11 @@ import com.hiromishikata.timetrackingradio.adapter.store.SharedPreferencesKeyVal
 import com.hiromishikata.timetrackingradio.domain.CellKey
 import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
 import com.hiromishikata.timetrackingradio.domain.DiagnosticRecorder
+import com.hiromishikata.timetrackingradio.domain.NetworkUnavailableException
 import com.hiromishikata.timetrackingradio.domain.SelectionRepository
 import com.hiromishikata.timetrackingradio.domain.Selection
 import com.hiromishikata.timetrackingradio.domain.SelectionRequest
+import com.hiromishikata.timetrackingradio.domain.WidgetOutcome
 import com.hiromishikata.timetrackingradio.domain.WidgetSettings
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
 import com.hiromishikata.timetrackingradio.domain.endpointKeySecrets
@@ -34,6 +36,8 @@ import java.time.Duration
 import java.time.Instant
 
 private val SENDING_STATE_MAX_AGE: Duration = Duration.ofMinutes(10)
+
+private val PENDING_TAP_MAX_AGE: Duration = Duration.ofMinutes(60)
 
 class WidgetController(
     private val context: Context,
@@ -59,7 +63,8 @@ class WidgetController(
         publish(settings.read(), settle(removing = null))
     }
 
-    fun acceptTap(cell: CellKey) {
+    fun acceptTap(cell: CellKey, workEnqueued: Boolean): Instant {
+        val tappedAt = clock()
         val loaded = settings.read()
         recorderFor(loaded).record(
             DiagnosticEventType.TAP_RECEIVED,
@@ -67,27 +72,33 @@ class WidgetController(
         )
         if (loaded != null) {
             synchronized(WidgetStateLock) {
-                val now = clock()
-                queuedTaps.write(liveQueue(now) + QueuedTap(cell, now))
+                queuedTaps.write(liveQueue(tappedAt) + QueuedTap(cell, tappedAt, workEnqueued))
             }
             render()
         }
+        return tappedAt
     }
 
-    suspend fun performTap(cell: CellKey) {
+    suspend fun performTap(cell: CellKey, tappedAt: Instant) {
         WidgetScope.mutex.withLock {
             val loaded = settings.read()
             if (loaded != null) {
                 var completed = false
+                var awaitingNetwork = false
                 try {
                     WidgetSelectionUpdateUseCase(
                         selections = selectionsFor(loaded),
                         snapshots = lockedSnapshots,
-                        afterSendingStarted = { renderInFlight(cell) },
-                    ) { clock() }.execute(cell)
+                        afterSendingStarted = { sendingStarted(cell) },
+                    ) { clock() }.execute(cell, tappedAt)
                     completed = true
+                } catch (unavailable: NetworkUnavailableException) {
+                    awaitingNetwork = true
+                    throw unavailable
                 } finally {
-                    publishSettled(removing = if (completed) cell else null)
+                    publishSettled(removing = if (completed) cell else null) { entries ->
+                        if (awaitingNetwork) entries.withWorkEnqueued(cell, true) else entries
+                    }
                 }
             }
         }
@@ -120,29 +131,37 @@ class WidgetController(
         ).execute()
     }
 
-    private fun renderInFlight(cell: CellKey) {
-        val settled = settle(removing = null)
+    private fun sendingStarted(cell: CellKey) {
+        val settled = settle(removing = null) { entries -> entries.withWorkEnqueued(cell, false) }
         publish(settings.read(), settled.copy(sending = settled.sending ?: resolveTapRequest(settled.selection, cell)))
     }
 
-    private fun publishSettled(removing: CellKey?) {
-        publish(settings.read(), settle(removing))
+    private fun publishSettled(removing: CellKey?, update: (List<QueuedTap>) -> List<QueuedTap> = { it }) {
+        publish(settings.read(), settle(removing, update))
     }
 
-    private fun settle(removing: CellKey?): WidgetSnapshot = synchronized(WidgetStateLock) {
+    private fun settle(
+        removing: CellKey?,
+        update: (List<QueuedTap>) -> List<QueuedTap> = { it },
+    ): WidgetSnapshot = synchronized(WidgetStateLock) {
         val now = clock()
-        val live = liveQueue(now)
+        val live = update(liveQueue(now))
         val remaining = if (removing == null) live else live.withoutFirst(removing)
         queuedTaps.write(remaining)
         val current = snapshots.read()
-        val settled = current.copy(sending = sendingRing(remaining, current.selection))
+        val outcome = when {
+            remaining.any { it.workEnqueued } -> WidgetOutcome.WaitingForNetwork
+            current.outcome == WidgetOutcome.WaitingForNetwork -> WidgetOutcome.Settled
+            else -> current.outcome
+        }
+        val settled = current.copy(outcome = outcome, sending = sendingRing(remaining, current.selection))
         snapshots.write(settled)
         settled
     }
 
-    private fun liveQueue(now: Instant): List<QueuedTap> {
-        val oldest = now.minus(SENDING_STATE_MAX_AGE)
-        return queuedTaps.readAll().filterNot { it.acceptedAt.isBefore(oldest) }
+    private fun liveQueue(now: Instant): List<QueuedTap> = queuedTaps.readAll().filterNot { entry ->
+        val maxAge = if (entry.workEnqueued) PENDING_TAP_MAX_AGE else SENDING_STATE_MAX_AGE
+        entry.acceptedAt.isBefore(now.minus(maxAge))
     }
 
     private fun recorderFor(current: WidgetSettings?): DiagnosticRecorder = DiagnosticRecorder(
@@ -166,6 +185,13 @@ private fun sendingRing(queue: List<QueuedTap>, selection: Selection?): Selectio
 private fun List<QueuedTap>.withoutFirst(cell: CellKey): List<QueuedTap> {
     val index = indexOfFirst { it.cell == cell }
     return if (index < 0) this else filterIndexed { position, _ -> position != index }
+}
+
+private fun List<QueuedTap>.withWorkEnqueued(cell: CellKey, enqueued: Boolean): List<QueuedTap> {
+    val index = indexOfFirst { it.cell == cell }
+    return if (index < 0) this else mapIndexed { position, entry ->
+        if (position == index) entry.copy(workEnqueued = enqueued) else entry
+    }
 }
 
 private fun publishToAllWidgets(context: Context, settings: WidgetSettings?, snapshot: WidgetSnapshot) {

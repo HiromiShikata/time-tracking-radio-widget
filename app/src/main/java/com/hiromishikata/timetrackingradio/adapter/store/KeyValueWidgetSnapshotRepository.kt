@@ -40,6 +40,7 @@ class KeyValueWidgetSnapshotRepository(private val store: KeyValueStore) : Widge
     private fun readOutcome(): WidgetOutcome = when (store.read(OUTCOME_KEY)) {
         OUTCOME_UNREACHABLE -> WidgetOutcome.Unreachable
         OUTCOME_REJECTED -> WidgetOutcome.Rejected(store.read(OUTCOME_MESSAGE_KEY).orEmpty())
+        OUTCOME_WAITING_FOR_NETWORK -> WidgetOutcome.WaitingForNetwork
         else -> WidgetOutcome.Settled
     }
 
@@ -50,6 +51,7 @@ class KeyValueWidgetSnapshotRepository(private val store: KeyValueStore) : Widge
                 WidgetOutcome.Settled -> null
                 WidgetOutcome.Unreachable -> OUTCOME_UNREACHABLE
                 is WidgetOutcome.Rejected -> OUTCOME_REJECTED
+                WidgetOutcome.WaitingForNetwork -> OUTCOME_WAITING_FOR_NETWORK
             },
         )
         store.write(OUTCOME_MESSAGE_KEY, (outcome as? WidgetOutcome.Rejected)?.message)
@@ -87,6 +89,7 @@ class KeyValueWidgetSnapshotRepository(private val store: KeyValueStore) : Widge
         const val OUTCOME_MESSAGE_KEY = "outcome_message"
         const val OUTCOME_UNREACHABLE = "unreachable"
         const val OUTCOME_REJECTED = "rejected"
+        const val OUTCOME_WAITING_FOR_NETWORK = "waiting_for_network"
         const val SENDING_KIND_KEY = "sending_kind"
         const val SENDING_PROJECT_KEY = "sending_project"
         const val SENDING_ACTIVITY_KEY = "sending_activity"

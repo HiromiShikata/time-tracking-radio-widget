@@ -1,25 +1,37 @@
 package com.hiromishikata.timetrackingradio.adapter.widget
 
 import android.content.Context
+import androidx.work.BackoffPolicy
+import androidx.work.Constraints
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.ListenableWorker
+import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.hiromishikata.timetrackingradio.domain.CellKey
+import java.time.Instant
+import java.util.concurrent.TimeUnit
 
 object WidgetWorkScheduler {
-    fun enqueueTap(context: Context, cell: CellKey) {
-        val request = buildWorkRequest<WidgetSelectionWorker>(
-            workDataOf(
-                WidgetSelectionWorker.KEY_PROJECT to cell.project,
-                WidgetSelectionWorker.KEY_ACTIVITY to cell.activity.code,
-            ),
-            expedited = true,
-        )
+    private const val TAP_RETRY_INITIAL_BACKOFF_SECONDS = 10L
+
+    fun enqueueTap(context: Context, cell: CellKey, tappedAt: Instant) {
+        val request = OneTimeWorkRequestBuilder<WidgetSelectionWorker>()
+            .setInputData(
+                workDataOf(
+                    WidgetSelectionWorker.KEY_PROJECT to cell.project,
+                    WidgetSelectionWorker.KEY_ACTIVITY to cell.activity.code,
+                    WidgetSelectionWorker.KEY_TAPPED_AT to tappedAt.toString(),
+                ),
+            )
+            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, TAP_RETRY_INITIAL_BACKOFF_SECONDS, TimeUnit.SECONDS)
+            .build()
         WorkManager.getInstance(context).enqueueUniqueWork(
             WidgetSelectionWorker.UNIQUE_WORK_NAME,
             ExistingWorkPolicy.APPEND_OR_REPLACE,

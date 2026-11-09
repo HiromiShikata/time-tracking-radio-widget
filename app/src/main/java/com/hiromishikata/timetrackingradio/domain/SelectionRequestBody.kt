@@ -1,9 +1,21 @@
 package com.hiromishikata.timetrackingradio.domain
 
-fun encodeSelectionRequest(request: SelectionRequest): String = when (request) {
-    is SelectionRequest.Select ->
-        "{\"project\":${request.cell.project.toJsonString()},\"activity\":\"${request.cell.activity.code}\"}"
-    SelectionRequest.Clear -> "{\"project\":null,\"activity\":null}"
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+
+private val tappedAtFormat: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC)
+
+fun encodeSelectionRequest(request: SelectionRequest, tappedAt: Instant): String {
+    val tappedAtField = "\"tappedAt\":\"${tappedAtFormat.format(tappedAt)}\""
+    return when (request) {
+        is SelectionRequest.Select -> {
+            val project = request.cell.project.toJsonString()
+            "{\"project\":$project,\"activity\":\"${request.cell.activity.code}\",$tappedAtField}"
+        }
+        SelectionRequest.Clear -> "{\"project\":null,\"activity\":null,$tappedAtField}"
+    }
 }
 
 private fun String.toJsonString(): String = buildString {

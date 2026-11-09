@@ -7,6 +7,7 @@ import androidx.work.WorkerParameters
 import com.google.common.util.concurrent.ListenableFuture
 import com.hiromishikata.timetrackingradio.domain.ActivityKind
 import com.hiromishikata.timetrackingradio.domain.CellKey
+import com.hiromishikata.timetrackingradio.domain.NetworkUnavailableException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -15,6 +16,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import java.time.Instant
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 import java.util.concurrent.Future
@@ -40,12 +42,15 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
         val controller = controllerFactory(applicationContext)
         return try {
             val cell = requestedCell()
-            if (cell == null) controller.refresh() else controller.performTap(cell)
+            if (cell == null) controller.refresh() else controller.performTap(cell, requestedTappedAt())
             currentCoroutineContext().ensureActive()
             WidgetWorkScheduler.enqueueDiagnosticsUpload(applicationContext)
             Result.success()
         } catch (cancelled: CancellationException) {
             throw cancelled
+        } catch (unavailable: NetworkUnavailableException) {
+            logWidgetWorkFailure(unavailable)
+            Result.retry()
         } catch (failure: Exception) {
             logWidgetWorkFailure(failure)
             controller.clearSending(inputCellOrNull())
@@ -66,6 +71,9 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
         )
     }
 
+    private fun requestedTappedAt(): Instant =
+        Instant.parse(requireNotNull(inputData.getString(KEY_TAPPED_AT)) { "tap input has no tappedAt" })
+
     private fun inputCellOrNull(): CellKey? = try {
         requestedCell()
     } catch (invalid: IllegalArgumentException) {
@@ -76,6 +84,7 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
         const val UNIQUE_WORK_NAME = "widget-selection"
         const val KEY_PROJECT = "project"
         const val KEY_ACTIVITY = "activity"
+        const val KEY_TAPPED_AT = "tappedAt"
 
         var controllerFactory: (Context) -> WidgetController = { WidgetController(it) }
     }

@@ -7,6 +7,8 @@ sealed interface WidgetOutcome {
 
     data object Unreachable : WidgetOutcome
 
+    data object WaitingForNetwork : WidgetOutcome
+
     data class Rejected(val message: String) : WidgetOutcome
 }
 
