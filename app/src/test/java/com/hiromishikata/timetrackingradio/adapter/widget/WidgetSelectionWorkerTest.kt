@@ -3,6 +3,8 @@ package com.hiromishikata.timetrackingradio.adapter.widget
 import android.content.Context
 import androidx.work.Data
 import androidx.work.ListenableWorker
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
 import com.hiromishikata.timetrackingradio.R
@@ -35,6 +37,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.io.EOFException
 import java.io.IOException
+import java.time.Duration
 import java.net.ConnectException
 import java.net.MalformedURLException
 import java.net.ProtocolException
@@ -56,6 +59,7 @@ class WidgetSelectionWorkerTest {
     private val context: Context = RuntimeEnvironment.getApplication()
     private val meeting = CellKey("project-a", ActivityKind.MEETING)
     private val since = Instant.parse("2026-11-07T08:39:00Z")
+    private val acceptedAt = Instant.parse("2026-11-07T08:00:00Z")
     private val rendered = mutableListOf<WidgetSnapshot>()
     private lateinit var transport: EchoSelectionTransport
     private val legacyCell = CellKey("project-a", ActivityKind.WORK)
@@ -490,6 +494,34 @@ class WidgetSelectionWorkerTest {
             check(System.currentTimeMillis() < deadline) { "the stopped work did not finish" }
             Thread.sleep(10)
         }
+    }
+
+    @Test
+    fun aPendingEntryWhoseWorkWasCancelledIsDroppedAtTheNextWorkerRun() {
+        val controller = WidgetController(context, { transport }, { EchoSelectionTransport() }, publish = { _, _ -> }, clock = { acceptedAt })
+        val accepted = controller.acceptTap(meeting, workEnqueued = true)
+        val workId = WidgetWorkScheduler.enqueueTap(context, meeting, accepted.tappedAt, accepted.request)
+        controller.attachWorkId(meeting, accepted.tappedAt, workId)
+        WorkManager.getInstance(context).cancelWorkById(workId).result.get(30, TimeUnit.SECONDS)
+        runWorker(Data.EMPTY)
+        val probe = controller.acceptTap(meeting, workEnqueued = false)
+        assertEquals(SelectionRequest.Select(meeting), probe.request)
+    }
+
+    @Test
+    fun aPendingEntryWhoseWorkIsStillEnqueuedCountsForProjectionAfterEightDays() {
+        val clock = AtomicReference(acceptedAt)
+        val controller = WidgetController(context, { transport }, { EchoSelectionTransport() }, publish = { _, _ -> }, clock = { clock.get() })
+        val accepted = controller.acceptTap(meeting, workEnqueued = true)
+        val workId = WidgetWorkScheduler.enqueueTap(context, meeting, accepted.tappedAt, accepted.request)
+        controller.attachWorkId(meeting, accepted.tappedAt, workId)
+        clock.set(acceptedAt.plus(Duration.ofDays(8)))
+        WidgetSelectionWorker.controllerFactory = { WidgetController(it, { transport }, { EchoSelectionTransport() }, publish = { _, snapshot -> rendered += snapshot }, clock = { clock.get() }) }
+        runWorker(Data.EMPTY)
+        val state = checkNotNull(WorkManager.getInstance(context).getWorkInfoById(workId).get(30, TimeUnit.SECONDS)).state
+        assertEquals(WorkInfo.State.ENQUEUED, state)
+        val probe = controller.acceptTap(meeting, workEnqueued = false)
+        assertEquals(SelectionRequest.Clear, probe.request)
     }
 }
 

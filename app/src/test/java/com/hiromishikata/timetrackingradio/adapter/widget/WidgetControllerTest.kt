@@ -796,8 +796,6 @@ class WidgetControllerTest {
 
     private data class TerminalTapCase(val name: String, val transportFailure: Throwable?, val runsThroughWorker: Boolean)
 
-    private data class BackstopCase(val name: String, val daysAfterPendingTap: Long, val expectedProbe: SelectionRequest)
-
     @Test
     fun aStampedTapWhoseSettingsAreAbsentWhenItsWorkRunsStopsProjectingItsRequest() {
         KeyValueWidgetSettingsRepository(store).write(settings)
@@ -859,25 +857,6 @@ class WidgetControllerTest {
         assertTrue("result=$result", result is ListenableWorker.Result.Retry)
         val probe = controller.acceptTap(meeting, workEnqueued = false)
         assertEquals(SelectionRequest.Clear, probe.request)
-    }
-
-    @Test
-    fun aPendingEntryStopsProjectingItsRequestOnlyAfterSevenDays() {
-        val pendingCell = CellKey("project-c", ActivityKind.MEETING)
-        val cases = listOf(
-            BackstopCase("six days after the pending tap the entry still projects its selection, so the probe clears", 6, SelectionRequest.Clear),
-            BackstopCase("eight days after the pending tap the entry is dropped, so the probe selects", 8, SelectionRequest.Select(pendingCell)),
-        )
-        cases.forEach { case ->
-            context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE).edit().clear().commit()
-            KeyValueWidgetSettingsRepository(store).write(settings)
-            val clock = AtomicReference(acceptedAt)
-            val controller = recordingController(ForbiddenTransport(), mutableListOf()) { clock.get() }
-            controller.acceptTap(pendingCell, workEnqueued = true)
-            clock.set(acceptedAt.plusSeconds(case.daysAfterPendingTap * 24 * 60 * 60))
-            val probe = controller.acceptTap(pendingCell, workEnqueued = false)
-            assertEquals("case=${case.name}", case.expectedProbe, probe.request)
-        }
     }
 }
 
