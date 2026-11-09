@@ -17,6 +17,7 @@ import java.time.Instant
 
 class HttpSelectionRepositoryDiagnosticsTest {
     private val endpoint = "https://script.example.com/exec?key=s3cr3t"
+    private val tappedAt = Instant.parse("2026-11-09T02:19:03.112Z")
 
     private fun recordedOf(script: () -> HttpResponse): List<Pair<String, String>> {
         val log = FakeDiagnosticLogRepository()
@@ -25,7 +26,7 @@ class HttpSelectionRepositoryDiagnosticsTest {
             FakeHttpTransport(ArrayDeque(listOf(script))),
             DiagnosticRecorder(log, endpointKeySecrets(endpoint)) { Instant.EPOCH },
         )
-        runCatching { repository.update(SelectionRequest.Select(CellKey("project-a", ActivityKind.WORK))) }
+        runCatching { repository.update(SelectionRequest.Select(CellKey("project-a", ActivityKind.WORK)), tappedAt) }
         return log.recorded.map { it.type.code to it.detail }
     }
 

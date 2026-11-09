@@ -21,6 +21,7 @@ class HttpNetworkContractTest {
     private lateinit var server: MockWebServer
     private val transport = HttpUrlConnectionTransport()
     private val okBody = """{"result":"ok","selection":null}"""
+    private val tappedAt = Instant.parse("2026-11-09T02:19:03.112Z")
 
     @Before
     fun startServer() {
@@ -49,11 +50,11 @@ class HttpNetworkContractTest {
         server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", endpoint("/echo")))
         server.enqueue(MockResponse().setResponseCode(200).setBody(okBody))
         val response = HttpSelectionRepository(endpoint(), transport)
-            .update(SelectionRequest.Select(CellKey("project-a", ActivityKind.MEETING)))
+            .update(SelectionRequest.Select(CellKey("project-a", ActivityKind.MEETING)), tappedAt)
         assertEquals(SelectionResponse.Accepted(null), response)
         val post = server.takeRequest()
         assertEquals("POST", post.method)
-        assertEquals("""{"project":"project-a","activity":"meeting"}""", post.body.readUtf8())
+        assertEquals("""{"project":"project-a","activity":"meeting","tappedAt":"2026-11-09T02:19:03.112Z"}""", post.body.readUtf8())
         val get = server.takeRequest()
         assertEquals("GET", get.method)
         assertEquals("/echo", get.path)
