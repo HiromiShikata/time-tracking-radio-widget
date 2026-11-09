@@ -84,10 +84,6 @@ class WidgetController(
         WidgetScope.mutex.withLock { sendTap(cell, request, tappedAt) }
     }
 
-    suspend fun performTap(cell: CellKey, tappedAt: Instant) {
-        WidgetScope.mutex.withLock { sendTap(cell, tapRequestFor(cell), tappedAt) }
-    }
-
     suspend fun performLegacyTap(cell: CellKey) {
         WidgetScope.mutex.withLock {
             val loaded = settings.read() ?: return

@@ -21,9 +21,6 @@ class WidgetSelectionUpdateUseCase(
     private val afterSendingStarted: () -> Unit = {},
     private val clock: () -> Instant,
 ) {
-    fun execute(tapped: CellKey, tappedAt: Instant): WidgetSnapshot =
-        execute(resolveTapRequest(snapshots.read().selection, tapped), tappedAt)
-
     fun execute(request: SelectionRequest, tappedAt: Instant): WidgetSnapshot =
         send(request) { selections.update(request, tappedAt) }
 
