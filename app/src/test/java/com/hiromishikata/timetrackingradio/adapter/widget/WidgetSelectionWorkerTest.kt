@@ -46,6 +46,7 @@ import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import javax.net.ssl.SSLException
 import javax.net.ssl.SSLHandshakeException
 
@@ -78,10 +79,10 @@ class WidgetSelectionWorkerTest {
     private fun runWorker(input: Data): ListenableWorker.Result =
         TestListenableWorkerBuilder<WidgetSelectionWorker>(context).setInputData(input).build().startWork().get()
 
-    private fun acceptedTapInput(request: SelectionRequest = SelectionRequest.Select(meeting)): Data {
-        val tappedAt = WidgetSelectionWorker.controllerFactory(context).acceptTap(meeting, workEnqueued = true)
+    private fun acceptedTapInput(): Data {
+        val accepted = WidgetSelectionWorker.controllerFactory(context).acceptTap(meeting, workEnqueued = true)
         rendered.clear()
-        return storedTapInput(context, meeting, tappedAt, request)
+        return storedTapInput(context, meeting, accepted.tappedAt, accepted.request)
     }
 
     private fun legacyTapInput(): Data = workDataOf(
@@ -183,7 +184,6 @@ class WidgetSelectionWorkerTest {
     private data class PostBodyCase(
         val name: String,
         val previous: Selection?,
-        val request: SelectionRequest,
         val expectedProject: String?,
         val expectedActivity: String?,
     )
@@ -191,13 +191,14 @@ class WidgetSelectionWorkerTest {
     @Test
     fun aTapPostNamesTheTappedCellAndAClearPostNamesNoCell() {
         val cases = listOf(
-            PostBodyCase("a tap on an unselected cell names that cell", null, SelectionRequest.Select(meeting), "project-a", "meeting"),
-            PostBodyCase("a tap on the selected cell is a clear", Selection(meeting, since), SelectionRequest.Clear, null, null),
+            PostBodyCase("a tap on an unselected cell names that cell", null, "project-a", "meeting"),
+            PostBodyCase("a tap on the selected cell is a clear", Selection(meeting, since), null, null),
         )
         cases.forEach { case ->
+            resetWidgetState()
             widgetSnapshots(context).write(WidgetSnapshot(case.previous, since, WidgetOutcome.Settled, null, null))
             transport = EchoSelectionTransport()
-            val result = runWorker(acceptedTapInput(case.request))
+            val result = runWorker(acceptedTapInput())
             assertTrue("case=${case.name} result=$result", result is ListenableWorker.Result.Success)
             val body = postedBodyOf(transport.requests.single { it.method == "POST" })
             assertEquals("case=${case.name}", case.expectedProject, body.getValue("project").jsonPrimitive.contentOrNull)
@@ -453,6 +454,29 @@ class WidgetSelectionWorkerTest {
             val status = renderedStatusText(context, rendered.last())
             assertFalse("case=${case.name} status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
         }
+    }
+
+    @Test
+    fun aRetriedTapOlderThanTheTwentyFourHourDisplayBoundShowsNoRingAndNoWaitingStatusAfterTheRetry() {
+        resetWidgetState()
+        val clock = AtomicReference(TEST_TAPPED_AT)
+        val accepting = WidgetController(context, { EchoSelectionTransport() }, { EchoSelectionTransport() }, publish = { _, _ -> }, clock = { clock.get() })
+        val accepted = accepting.acceptTap(meeting, workEnqueued = true)
+        clock.set(accepted.tappedAt.plusSeconds(25 * 60 * 60L))
+        rendered.clear()
+        transport = EchoSelectionTransport { throw UnknownHostException("unreachable.example") }
+        WidgetSelectionWorker.controllerFactory = {
+            WidgetController(it, { transport }, { EchoSelectionTransport() }, publish = { _, snapshot -> rendered += snapshot }, clock = { clock.get() })
+        }
+        val result = runWorker(storedTapInput(context, meeting, accepted.tappedAt, accepted.request))
+        assertTrue("result=$result", result is ListenableWorker.Result.Retry)
+        val stored = widgetSnapshots(context).read()
+        val last = rendered.last()
+        val status = renderedStatusText(context, last)
+        assertNull("the stored snapshot shows the ring of a tap older than 24 hours", stored.sending)
+        assertNull("the last render shows the ring of a tap older than 24 hours", last.sending)
+        assertFalse("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
+        assertFalse("the tapped cell still draws the sending ring", renderedCellDrawableResId(context, last, meeting) == R.drawable.cell_sending)
     }
 
     private fun resetWidgetState() {
