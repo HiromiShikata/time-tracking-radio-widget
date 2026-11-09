@@ -38,6 +38,8 @@ private val SENDING_STATE_MAX_AGE: Duration = Duration.ofMinutes(10)
 
 private val PENDING_TAP_DISPLAY_MAX_AGE: Duration = Duration.ofHours(24)
 
+private val PENDING_TAP_STORE_MAX_AGE: Duration = Duration.ofDays(7)
+
 data class AcceptedTap(val tappedAt: Instant, val request: SelectionRequest)
 
 class WidgetController(
@@ -137,8 +139,11 @@ class WidgetController(
     }
 
     private fun sendTap(cell: CellKey, request: SelectionRequest, tappedAt: Instant) {
-        val loaded = settings.read() ?: return
-        var completed = false
+        val loaded = settings.read()
+        if (loaded == null) {
+            discardTap(cell, tappedAt)
+            return
+        }
         var awaitingNetwork = false
         try {
             WidgetSelectionUpdateUseCase(
@@ -146,17 +151,16 @@ class WidgetController(
                 snapshots = lockedSnapshots,
                 afterSendingStarted = { sendingStarted(cell, tappedAt) },
             ) { clock() }.execute(request, tappedAt)
-            completed = true
         } catch (unavailable: NetworkUnavailableException) {
             awaitingNetwork = true
             throw unavailable
         } finally {
             val now = clock()
             publishSettled { entries ->
-                when {
-                    awaitingNetwork -> entries.withPendingWork(cell, tappedAt, request, now)
-                    completed -> entries.withoutTap(cell, tappedAt)
-                    else -> entries
+                if (awaitingNetwork) {
+                    entries.withPendingWork(cell, tappedAt, request, now)
+                } else {
+                    entries.withoutTap(cell, tappedAt)
                 }
             }
         }
@@ -194,7 +198,11 @@ class WidgetController(
     }
 
     private fun storedQueue(now: Instant): List<QueuedTap> = queuedTaps.readAll().filterNot { entry ->
-        !entry.workEnqueued && entry.acceptedAt.isBefore(now.minus(SENDING_STATE_MAX_AGE))
+        if (entry.workEnqueued) {
+            entry.acceptedAt.isBefore(now.minus(PENDING_TAP_STORE_MAX_AGE))
+        } else {
+            entry.acceptedAt.isBefore(now.minus(SENDING_STATE_MAX_AGE))
+        }
     }
 
     private fun recorderFor(current: WidgetSettings?): DiagnosticRecorder = DiagnosticRecorder(
