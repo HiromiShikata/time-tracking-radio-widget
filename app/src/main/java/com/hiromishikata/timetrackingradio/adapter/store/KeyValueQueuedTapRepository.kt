@@ -15,6 +15,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.time.Instant
+import java.util.UUID
 
 data class QueuedTap(
     val cell: CellKey,
@@ -22,6 +23,7 @@ data class QueuedTap(
     val request: SelectionRequest,
     val workEnqueued: Boolean,
     val waiting: Boolean,
+    val workId: UUID?,
 )
 
 class KeyValueQueuedTapRepository(private val store: KeyValueStore) {
@@ -36,6 +38,7 @@ class KeyValueQueuedTapRepository(private val store: KeyValueStore) {
                 readRequest(entry),
                 entry[WORK_ENQUEUED_FIELD]?.jsonPrimitive?.booleanOrNull ?: false,
                 entry[WAITING_FIELD]?.jsonPrimitive?.booleanOrNull ?: false,
+                entry[WORK_ID_FIELD]?.jsonPrimitive?.contentOrNull?.let(UUID::fromString),
             )
         }
     }
@@ -56,6 +59,7 @@ class KeyValueQueuedTapRepository(private val store: KeyValueStore) {
                             put(REQUEST_ACTIVITY_FIELD, requestCell?.activity?.code)
                             put(WORK_ENQUEUED_FIELD, entry.workEnqueued)
                             put(WAITING_FIELD, entry.waiting)
+                            put(WORK_ID_FIELD, entry.workId?.toString())
                         },
                     )
                 }
@@ -84,5 +88,6 @@ class KeyValueQueuedTapRepository(private val store: KeyValueStore) {
         const val REQUEST_ACTIVITY_FIELD = "request_activity"
         const val WORK_ENQUEUED_FIELD = "work_enqueued"
         const val WAITING_FIELD = "waiting"
+        const val WORK_ID_FIELD = "work_id"
     }
 }

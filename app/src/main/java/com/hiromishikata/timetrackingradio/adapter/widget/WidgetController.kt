@@ -33,12 +33,11 @@ import com.hiromishikata.timetrackingradio.usecase.WidgetSnapshotReadUseCase
 import kotlinx.coroutines.sync.withLock
 import java.time.Duration
 import java.time.Instant
+import java.util.UUID
 
 private val SENDING_STATE_MAX_AGE: Duration = Duration.ofMinutes(10)
 
 private val PENDING_TAP_DISPLAY_MAX_AGE: Duration = Duration.ofHours(24)
-
-private val PENDING_TAP_STORE_MAX_AGE: Duration = Duration.ofDays(7)
 
 data class AcceptedTap(val tappedAt: Instant, val request: SelectionRequest)
 
@@ -77,7 +76,7 @@ class WidgetController(
             val pending = storedQueue(tappedAt)
             val resolved = resolveTapRequest(projectSelection(snapshots.read().selection, pending), cell)
             if (loaded != null) {
-                queuedTaps.write(pending + QueuedTap(cell, tappedAt, resolved, workEnqueued, waiting = workEnqueued))
+                queuedTaps.write(pending + QueuedTap(cell, tappedAt, resolved, workEnqueued, waiting = workEnqueued, workId = null))
             }
             resolved
         }
@@ -127,6 +126,18 @@ class WidgetController(
 
     fun markWaiting(cell: CellKey, tappedAt: Instant) {
         publishSettled { entries -> entries.withWaiting(cell, tappedAt, waiting = true) }
+    }
+
+    fun attachWorkId(cell: CellKey, tappedAt: Instant, workId: UUID) {
+        publishSettled { entries -> entries.withWorkId(cell, tappedAt, workId) }
+    }
+
+    fun dropFinishedWork(isFinished: (UUID) -> Boolean) {
+        val workIds = synchronized(WidgetStateLock) { storedQueue(clock()).mapNotNull { it.workId } }
+        val finished = workIds.filter(isFinished).toSet()
+        if (finished.isNotEmpty()) {
+            publishSettled { entries -> entries.filterNot { it.workId in finished } }
+        }
     }
 
     fun uploadDiagnostics() {
@@ -198,11 +209,7 @@ class WidgetController(
     }
 
     private fun storedQueue(now: Instant): List<QueuedTap> = queuedTaps.readAll().filterNot { entry ->
-        if (entry.workEnqueued) {
-            entry.acceptedAt.isBefore(now.minus(PENDING_TAP_STORE_MAX_AGE))
-        } else {
-            entry.acceptedAt.isBefore(now.minus(SENDING_STATE_MAX_AGE))
-        }
+        !entry.workEnqueued && entry.acceptedAt.isBefore(now.minus(SENDING_STATE_MAX_AGE))
     }
 
     private fun recorderFor(current: WidgetSettings?): DiagnosticRecorder = DiagnosticRecorder(
@@ -235,6 +242,13 @@ private fun List<QueuedTap>.withWaiting(cell: CellKey, tappedAt: Instant, waitin
     }
 }
 
+private fun List<QueuedTap>.withWorkId(cell: CellKey, tappedAt: Instant, workId: UUID): List<QueuedTap> {
+    val index = indexOfTap(cell, tappedAt)
+    return if (index < 0) this else mapIndexed { position, entry ->
+        if (position == index) entry.copy(workId = workId) else entry
+    }
+}
+
 private fun List<QueuedTap>.displayed(now: Instant): List<QueuedTap> = filterNot { entry ->
     entry.workEnqueued && entry.acceptedAt.isBefore(now.minus(PENDING_TAP_DISPLAY_MAX_AGE))
 }
@@ -258,7 +272,7 @@ private fun List<QueuedTap>.withPendingWork(
         if (tappedAt.isBefore(now.minus(PENDING_TAP_DISPLAY_MAX_AGE))) {
             this
         } else {
-            this + QueuedTap(cell, tappedAt, request, workEnqueued = true, waiting = true)
+            this + QueuedTap(cell, tappedAt, request, workEnqueued = true, waiting = true, workId = null)
         }
     } else {
         mapIndexed { position, entry ->

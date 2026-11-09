@@ -3,6 +3,8 @@ package com.hiromishikata.timetrackingradio.adapter.widget
 import android.content.Context
 import androidx.work.ForegroundInfo
 import androidx.work.ListenableWorker
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.google.common.util.concurrent.ListenableFuture
 import com.hiromishikata.timetrackingradio.domain.ActivityKind
@@ -19,9 +21,11 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import java.time.DateTimeException
 import java.time.Instant
+import java.util.UUID
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 import java.util.concurrent.Future
+import java.util.concurrent.TimeUnit
 
 class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : ListenableWorker(context, parameters) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -43,6 +47,7 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
     private suspend fun runSelection(): Result {
         val controller = controllerFactory(applicationContext)
         return try {
+            controller.dropFinishedWork { workId -> workFinished(workId) }
             when (val work = requestedWork()) {
                 RequestedWork.Refresh -> controller.refresh()
                 is RequestedWork.StampedTap -> controller.performTap(work.cell, work.request, work.tappedAt)
@@ -63,6 +68,14 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
             WidgetWorkScheduler.enqueueDiagnosticsUpload(applicationContext)
             Result.success()
         }
+    }
+
+    private fun workFinished(workId: UUID): Boolean = try {
+        val info = WorkManager.getInstance(applicationContext).getWorkInfoById(workId).get(WORK_INFO_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        info == null || info.state in FINISHED_STATES
+    } catch (failure: Exception) {
+        logWidgetWorkFailure(failure)
+        false
     }
 
     private fun requestedWork(): RequestedWork {
@@ -94,6 +107,8 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
 
     companion object {
         const val UNIQUE_WORK_NAME = "widget-selection"
+        private const val WORK_INFO_TIMEOUT_SECONDS = 5L
+        private val FINISHED_STATES = setOf(WorkInfo.State.SUCCEEDED, WorkInfo.State.FAILED, WorkInfo.State.CANCELLED)
         const val KEY_PROJECT = "project"
         const val KEY_ACTIVITY = "activity"
         const val KEY_TAPPED_AT = "tappedAt"
