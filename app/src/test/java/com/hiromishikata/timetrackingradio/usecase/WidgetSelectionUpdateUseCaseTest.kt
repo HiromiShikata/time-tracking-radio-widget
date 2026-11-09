@@ -17,6 +17,7 @@ import java.time.Instant
 class WidgetSelectionUpdateUseCaseTest {
     private val now = Instant.parse("2026-11-07T09:00:00Z")
     private val earlier = Instant.parse("2026-11-07T08:39:00Z")
+    private val tappedAt = Instant.parse("2026-11-09T02:19:03.112Z")
     private val work = CellKey("project-a", ActivityKind.WORK)
     private val meeting = CellKey("project-a", ActivityKind.MEETING)
     private val workSelected = WidgetSnapshot(Selection(work, earlier), earlier, WidgetOutcome.Settled, null)
@@ -90,7 +91,7 @@ class WidgetSelectionUpdateUseCaseTest {
         cases.forEach { case ->
             val selections = FakeSelectionRepository(onUpdate = case.response)
             val snapshots = FakeWidgetSnapshotRepository(case.before)
-            val after = WidgetSelectionUpdateUseCase(selections, snapshots) { now }.execute(case.tapped)
+            val after = WidgetSelectionUpdateUseCase(selections, snapshots) { now }.execute(case.tapped, tappedAt)
             assertEquals(case.name, listOf(case.expectedRequest), selections.updates)
             assertEquals(case.name, case.expectedRequest, snapshots.writes.first().sending)
             assertEquals(case.name, case.expectedAfter, after)
@@ -102,7 +103,7 @@ class WidgetSelectionUpdateUseCaseTest {
     fun anyUnexpectedFailureClearsTheSendingStateAndIsRethrown() {
         val selections = FakeSelectionRepository(onUpdate = { throw IllegalStateException("unexpected") })
         val snapshots = FakeWidgetSnapshotRepository(workSelected)
-        val thrown = runCatching { WidgetSelectionUpdateUseCase(selections, snapshots) { now }.execute(meeting) }
+        val thrown = runCatching { WidgetSelectionUpdateUseCase(selections, snapshots) { now }.execute(meeting, tappedAt) }
             .exceptionOrNull()
         assertTrue("thrown=$thrown", thrown is IllegalStateException)
         assertEquals(workSelected, snapshots.read())
