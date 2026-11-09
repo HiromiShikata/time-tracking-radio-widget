@@ -36,10 +36,12 @@ import org.robolectric.annotation.Config
 import java.io.EOFException
 import java.io.IOException
 import java.net.ConnectException
+import java.net.MalformedURLException
 import java.net.ProtocolException
 import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import java.net.UnknownServiceException
 import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
@@ -55,6 +57,7 @@ class WidgetSelectionWorkerTest {
     private val since = Instant.parse("2026-11-07T08:39:00Z")
     private val rendered = mutableListOf<WidgetSnapshot>()
     private lateinit var transport: EchoSelectionTransport
+    private val legacyCell = CellKey("project-a", ActivityKind.WORK)
 
     private data class RunCase(val name: String, val input: Data, val expectedMethods: List<String>)
 
@@ -75,17 +78,16 @@ class WidgetSelectionWorkerTest {
     private fun runWorker(input: Data): ListenableWorker.Result =
         TestListenableWorkerBuilder<WidgetSelectionWorker>(context).setInputData(input).build().startWork().get()
 
-    private fun tapInputAt(tappedAt: Instant): Data = workDataOf(
-        WidgetSelectionWorker.KEY_PROJECT to "project-a",
-        WidgetSelectionWorker.KEY_ACTIVITY to "meeting",
-        WidgetSelectionWorker.KEY_TAPPED_AT to tappedAt.toString(),
-    )
-
-    private fun acceptedTapInput(): Data {
+    private fun acceptedTapInput(request: SelectionRequest = SelectionRequest.Select(meeting)): Data {
         val tappedAt = WidgetSelectionWorker.controllerFactory(context).acceptTap(meeting, workEnqueued = true)
         rendered.clear()
-        return tapInputAt(tappedAt)
+        return storedTapInput(context, meeting, tappedAt, request)
     }
+
+    private fun legacyTapInput(): Data = workDataOf(
+        WidgetSelectionWorker.KEY_PROJECT to legacyCell.project,
+        WidgetSelectionWorker.KEY_ACTIVITY to legacyCell.activity.code,
+    )
 
     @Test
     fun eachInputRunsItsSelectionCallAndRendersTheResult() {
@@ -181,6 +183,7 @@ class WidgetSelectionWorkerTest {
     private data class PostBodyCase(
         val name: String,
         val previous: Selection?,
+        val request: SelectionRequest,
         val expectedProject: String?,
         val expectedActivity: String?,
     )
@@ -188,13 +191,13 @@ class WidgetSelectionWorkerTest {
     @Test
     fun aTapPostNamesTheTappedCellAndAClearPostNamesNoCell() {
         val cases = listOf(
-            PostBodyCase("a tap on an unselected cell names that cell", null, "project-a", "meeting"),
-            PostBodyCase("a tap on the selected cell is a clear", Selection(meeting, since), null, null),
+            PostBodyCase("a tap on an unselected cell names that cell", null, SelectionRequest.Select(meeting), "project-a", "meeting"),
+            PostBodyCase("a tap on the selected cell is a clear", Selection(meeting, since), SelectionRequest.Clear, null, null),
         )
         cases.forEach { case ->
-            widgetSnapshots(context).write(WidgetSnapshot(case.previous, since, WidgetOutcome.Settled, null))
+            widgetSnapshots(context).write(WidgetSnapshot(case.previous, since, WidgetOutcome.Settled, null, null))
             transport = EchoSelectionTransport()
-            val result = runWorker(acceptedTapInput())
+            val result = runWorker(acceptedTapInput(case.request))
             assertTrue("case=${case.name} result=$result", result is ListenableWorker.Result.Success)
             val body = postedBodyOf(transport.requests.single { it.method == "POST" })
             assertEquals("case=${case.name}", case.expectedProject, body.getValue("project").jsonPrimitive.contentOrNull)
@@ -258,8 +261,8 @@ class WidgetSelectionWorkerTest {
     @Test
     fun aStoppedWorkClearsTheSendingState() {
         KeyValueWidgetSettingsRepository(widgetPreferences(context)).write(WIDGET_TEST_SETTINGS)
-        widgetSnapshots(context).write(WidgetSnapshot(Selection(meeting, since), since, WidgetOutcome.Settled, SelectionRequest.Select(meeting)))
-        val worker = TestListenableWorkerBuilder<WidgetSelectionWorker>(context).setInputData(tapInputAt(TEST_TAPPED_AT)).build()
+        widgetSnapshots(context).write(WidgetSnapshot(Selection(meeting, since), since, WidgetOutcome.Settled, SelectionRequest.Select(meeting), null))
+        val worker = TestListenableWorkerBuilder<WidgetSelectionWorker>(context).setInputData(storedTapInput(context, meeting, TEST_TAPPED_AT, SelectionRequest.Select(meeting))).build()
         worker.onStopped()
         assertNull(widgetSnapshots(context).read().sending)
         assertNull(rendered.last().sending)
@@ -274,11 +277,9 @@ class WidgetSelectionWorkerTest {
             TransportFailureCase("unexpected end of stream", IOException("unexpected end of stream"), false),
             TransportFailureCase("TLS exception", SSLException("handshake"), false),
             TransportFailureCase("end of file", EOFException(), false),
-            TransportFailureCase("protocol exception", ProtocolException("bad"), false),
             TransportFailureCase("unexpected end of stream on the redirect follow-up", IOException("unexpected end of stream"), true),
             TransportFailureCase("TLS exception on the redirect follow-up", SSLException("handshake"), true),
             TransportFailureCase("end of file on the redirect follow-up", EOFException(), true),
-            TransportFailureCase("protocol exception on the redirect follow-up", ProtocolException("bad"), true),
         )
         cases.forEach { case ->
             resetWidgetState()
@@ -344,10 +345,80 @@ class WidgetSelectionWorkerTest {
         val input = acceptedTapInput()
         val first = runWorker(input)
         assertTrue("first=$first", first is ListenableWorker.Result.Retry)
-        widgetSnapshots(context).write(WidgetSnapshot(Selection(meeting, since), since, WidgetOutcome.Settled, null))
+        widgetSnapshots(context).write(WidgetSnapshot(Selection(meeting, since), since, WidgetOutcome.Settled, null, null))
         val second = runWorker(input)
         assertTrue("second=$second", second is ListenableWorker.Result.Success)
         assertEquals(listOf(SELECT_MEETING_BODY, SELECT_MEETING_BODY), flaky.postBodies)
+    }
+
+    private data class LegacyTapCase(val name: String, val previous: Selection, val expectedBody: String)
+
+    @Test
+    fun aLegacyTapWithoutTappedAtResolvesItsRequestFromTheSelectionAtSendTime() {
+        val cases = listOf(
+            LegacyTapCase(
+                "another cell is selected, so the tapped cell is selected",
+                Selection(CellKey("project-b", ActivityKind.MEETING), since),
+                """{"project":"project-a","activity":"work"}""",
+            ),
+            LegacyTapCase(
+                "the tapped cell is selected, so the tap clears it",
+                Selection(legacyCell, since),
+                """{"project":null,"activity":null}""",
+            ),
+        )
+        cases.forEach { case ->
+            resetWidgetState()
+            widgetSnapshots(context).write(WidgetSnapshot(case.previous, since, WidgetOutcome.Settled, null, null))
+            transport = EchoSelectionTransport()
+            val result = runWorker(legacyTapInput())
+            assertTrue("case=${case.name} result=$result", result is ListenableWorker.Result.Success)
+            assertEquals(
+                "case=${case.name}",
+                listOf(case.expectedBody),
+                transport.requests.filter { it.method == "POST" }.map { it.body },
+            )
+        }
+    }
+
+    @Test
+    fun aNetworkFailureOfALegacyTapRequestsARetryAndKeepsItsRing() {
+        resetWidgetState()
+        widgetSnapshots(context).write(
+            WidgetSnapshot(Selection(CellKey("project-b", ActivityKind.MEETING), since), since, WidgetOutcome.Settled, null, null),
+        )
+        rendered.clear()
+        transport = EchoSelectionTransport { throw UnknownHostException("unreachable.example") }
+        val result = runWorker(legacyTapInput())
+        assertTrue("result=$result", result is ListenableWorker.Result.Retry)
+        assertEquals(SelectionRequest.Select(legacyCell), widgetSnapshots(context).read().sending)
+        assertEquals(SelectionRequest.Select(legacyCell), rendered.last().sending)
+    }
+
+    private data class FinalFailureCase(val name: String, val failure: IOException)
+
+    @Test
+    fun aFinalTransportFailureOfATapIsNotRetriedAndShowsUnreachable() {
+        val cases = listOf(
+            FinalFailureCase("a malformed URL", MalformedURLException("bad")),
+            FinalFailureCase("an unknown service", UnknownServiceException("bad")),
+            FinalFailureCase("a protocol failure", ProtocolException("bad")),
+        )
+        cases.forEach { case ->
+            resetWidgetState()
+            rendered.clear()
+            transport = EchoSelectionTransport { throw case.failure }
+            val result = runWorker(acceptedTapInput())
+            assertTrue("case=${case.name} result=$result", result is ListenableWorker.Result.Success)
+            assertEquals("case=${case.name}", 1, transport.requests.count { it.method == "POST" })
+            val stored = widgetSnapshots(context).read()
+            assertEquals("case=${case.name}", WidgetOutcome.Unreachable, stored.outcome)
+            assertNull("case=${case.name}", stored.sending)
+            assertEquals("case=${case.name}", stored, rendered.last())
+            assertNull("case=${case.name}", rendered.last().sending)
+            val status = renderedStatusText(context, rendered.last())
+            assertFalse("case=${case.name} status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
+        }
     }
 
     private fun resetWidgetState() {

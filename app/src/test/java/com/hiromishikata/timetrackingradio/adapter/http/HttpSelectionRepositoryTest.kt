@@ -12,9 +12,12 @@ import org.junit.Test
 import java.io.IOException
 import java.time.Instant
 import java.net.ConnectException
+import java.net.MalformedURLException
+import java.net.ProtocolException
 import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import java.net.UnknownServiceException
 import javax.net.ssl.SSLException
 import javax.net.ssl.SSLHandshakeException
 
@@ -104,6 +107,25 @@ class HttpSelectionRepositoryTest {
             assertTrue(
                 "failure=$failure thrown=$thrown",
                 thrown is CommunicationFailedException && thrown.cause === failure,
+            )
+        }
+    }
+
+    @Test
+    fun aFinalTransportFailureOfATapBecomesACommunicationFailureThatIsNotANetworkFailure() {
+        val failures = listOf<IOException>(
+            MalformedURLException("bad"),
+            UnknownServiceException("bad"),
+            ProtocolException("bad"),
+        )
+        failures.forEach { failure ->
+            val script: () -> HttpResponse = { throw failure }
+            val thrown = runCatching {
+                HttpSelectionRepository(endpoint, FakeHttpTransport(ArrayDeque(listOf(script)))).update(request, tappedAt)
+            }.exceptionOrNull()
+            assertTrue(
+                "failure=$failure thrown=$thrown",
+                thrown is CommunicationFailedException && thrown !is NetworkUnavailableException && thrown.cause === failure,
             )
         }
     }

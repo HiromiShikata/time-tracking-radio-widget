@@ -20,7 +20,7 @@ class WidgetSelectionUpdateUseCaseTest {
     private val tappedAt = Instant.parse("2026-11-09T02:19:03.112Z")
     private val work = CellKey("project-a", ActivityKind.WORK)
     private val meeting = CellKey("project-a", ActivityKind.MEETING)
-    private val workSelected = WidgetSnapshot(Selection(work, earlier), earlier, WidgetOutcome.Settled, null)
+    private val workSelected = WidgetSnapshot(Selection(work, earlier), earlier, WidgetOutcome.Settled, null, null)
 
     @Test
     fun tapSendsTheResolvedRequestAndStoresTheOutcome() {
@@ -40,7 +40,7 @@ class WidgetSelectionUpdateUseCaseTest {
                 work,
                 { SelectionResponse.Accepted(Selection(work, now)) },
                 SelectionRequest.Select(work),
-                WidgetSnapshot(Selection(work, now), now, WidgetOutcome.Settled, null),
+                WidgetSnapshot(Selection(work, now), now, WidgetOutcome.Settled, null, null),
             ),
             Case(
                 "tapping the selected cell clears",
@@ -48,7 +48,7 @@ class WidgetSelectionUpdateUseCaseTest {
                 work,
                 { SelectionResponse.Accepted(null) },
                 SelectionRequest.Clear,
-                WidgetSnapshot(null, now, WidgetOutcome.Settled, null),
+                WidgetSnapshot(null, now, WidgetOutcome.Settled, null, null),
             ),
             Case(
                 "network failure keeps the shown state",
@@ -56,7 +56,7 @@ class WidgetSelectionUpdateUseCaseTest {
                 meeting,
                 unreachable,
                 SelectionRequest.Select(meeting),
-                WidgetSnapshot(Selection(work, earlier), earlier, WidgetOutcome.Unreachable, null),
+                WidgetSnapshot(Selection(work, earlier), earlier, WidgetOutcome.Unreachable, null, null),
             ),
             Case(
                 "network failure without a known state",
@@ -64,7 +64,7 @@ class WidgetSelectionUpdateUseCaseTest {
                 work,
                 unreachable,
                 SelectionRequest.Select(work),
-                WidgetSnapshot(null, null, WidgetOutcome.Unreachable, null),
+                WidgetSnapshot(null, null, WidgetOutcome.Unreachable, null, null),
             ),
             Case(
                 "rejection without a reported selection keeps the shown state",
@@ -72,7 +72,7 @@ class WidgetSelectionUpdateUseCaseTest {
                 meeting,
                 { SelectionResponse.Rejected("wrong key", ReportedSelection.NotReported) },
                 SelectionRequest.Select(meeting),
-                WidgetSnapshot(Selection(work, earlier), earlier, WidgetOutcome.Rejected("wrong key"), null),
+                WidgetSnapshot(Selection(work, earlier), earlier, WidgetOutcome.Rejected("wrong key"), null, null),
             ),
             Case(
                 "rejection with a reported selection adopts it",
@@ -85,7 +85,7 @@ class WidgetSelectionUpdateUseCaseTest {
                     )
                 },
                 SelectionRequest.Select(meeting),
-                WidgetSnapshot(Selection(meeting, now), now, WidgetOutcome.Rejected("project not allowed"), null),
+                WidgetSnapshot(Selection(meeting, now), now, WidgetOutcome.Rejected("project not allowed"), null, null),
             ),
         )
         cases.forEach { case ->

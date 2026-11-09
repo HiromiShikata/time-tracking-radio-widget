@@ -51,7 +51,7 @@ class SelectionWidgetRemoteViewsFactoryTest {
     fun aSelectionInFlightRendersTheSendingRingOnItsCellAndTheSwitchingStatus() {
         val meeting = CellKey("project-a", ActivityKind.MEETING)
         val work = CellKey("project-a", ActivityKind.WORK)
-        val snapshot = WidgetSnapshot(null, null, WidgetOutcome.Settled, SelectionRequest.Select(meeting))
+        val snapshot = WidgetSnapshot(null, null, WidgetOutcome.Settled, SelectionRequest.Select(meeting), SelectionRequest.Select(meeting))
         val cases = listOf(
             Pair(meeting, R.drawable.cell_sending),
             Pair(work, R.drawable.cell_unselected),
@@ -60,5 +60,13 @@ class SelectionWidgetRemoteViewsFactoryTest {
             assertEquals("cell=$cell", expectedDrawable, renderedCellDrawableResId(context, snapshot, cell))
         }
         assertEquals("Switching to project-a / meeting…", renderedStatusText(context, snapshot))
+    }
+
+    @Test
+    fun aSendingRingWithoutAStatusRequestDoesNotFallBackToTheSwitchingStatus() {
+        val meeting = CellKey("project-a", ActivityKind.MEETING)
+        val idle = WidgetSnapshot(null, null, WidgetOutcome.Settled, null, null)
+        val snapshot = WidgetSnapshot(null, null, WidgetOutcome.Settled, SelectionRequest.Select(meeting), null)
+        assertEquals(renderedStatusText(context, idle), renderedStatusText(context, snapshot))
     }
 }

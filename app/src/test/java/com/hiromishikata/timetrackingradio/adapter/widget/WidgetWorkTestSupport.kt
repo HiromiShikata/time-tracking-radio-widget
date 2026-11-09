@@ -8,9 +8,15 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.work.Configuration
+import androidx.work.Data
+import androidx.work.ListenableWorker
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import androidx.work.WorkerFactory
+import androidx.work.WorkerParameters
 import androidx.work.testing.WorkManagerTestInitHelper
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 import com.hiromishikata.timetrackingradio.R
 import com.hiromishikata.timetrackingradio.adapter.http.HttpRequest
 import com.hiromishikata.timetrackingradio.adapter.http.HttpResponse
@@ -21,6 +27,7 @@ import com.hiromishikata.timetrackingradio.adapter.store.SETTINGS_PREFERENCES_NA
 import com.hiromishikata.timetrackingradio.adapter.store.SharedPreferencesKeyValueStore
 import com.hiromishikata.timetrackingradio.domain.ActivityKind
 import com.hiromishikata.timetrackingradio.domain.CellKey
+import com.hiromishikata.timetrackingradio.domain.SelectionRequest
 import com.hiromishikata.timetrackingradio.domain.WidgetSettings
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
 import kotlinx.serialization.json.Json
@@ -32,6 +39,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 internal val WIDGET_TEST_SETTINGS = WidgetSettings("https://example.com/exec?key=example", listOf("project-a", "project-b"))
 
@@ -113,6 +121,30 @@ internal fun awaitUniqueWork(
 
 internal fun awaitWorkFinished(context: Context, uniqueWorkName: String, timeoutMillis: Long = 30_000) {
     awaitUniqueWork(context, uniqueWorkName, "work finishing", timeoutMillis) { infos -> infos.all { it.state.isFinished } }
+}
+
+internal fun storedTapInput(context: Context, cell: CellKey, tappedAt: Instant, request: SelectionRequest): Data {
+    val captured = AtomicReference<Data?>(null)
+    val configuration = Configuration.Builder()
+        .setExecutor(Executors.newSingleThreadExecutor { Thread(it, "widget-tap-input").apply { isDaemon = true } })
+        .setWorkerFactory(object : WorkerFactory() {
+            override fun createWorker(appContext: Context, workerClassName: String, workerParameters: WorkerParameters): ListenableWorker {
+                captured.compareAndSet(null, workerParameters.inputData)
+                return object : ListenableWorker(appContext, workerParameters) {
+                    override fun startWork(): ListenableFuture<Result> = Futures.immediateFuture(Result.success())
+                }
+            }
+        })
+        .build()
+    WorkManagerTestInitHelper.initializeTestWorkManager(context, configuration)
+    WidgetWorkScheduler.enqueueTap(context, cell, tappedAt, request)
+    meetConstraintsOnceQueued(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
+    val deadline = System.currentTimeMillis() + 30_000
+    while (captured.get() == null) {
+        check(System.currentTimeMillis() < deadline) { "the tap's work did not start under ${WidgetSelectionWorker.UNIQUE_WORK_NAME}" }
+        Thread.sleep(10)
+    }
+    return checkNotNull(captured.get())
 }
 
 internal val TEST_TAPPED_AT: Instant = Instant.parse("2026-11-09T02:19:03.112Z")

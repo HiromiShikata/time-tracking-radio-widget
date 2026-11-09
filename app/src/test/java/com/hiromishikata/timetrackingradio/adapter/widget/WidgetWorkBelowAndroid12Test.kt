@@ -7,6 +7,7 @@ import com.hiromishikata.timetrackingradio.TestApplication
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueWidgetSettingsRepository
 import com.hiromishikata.timetrackingradio.domain.ActivityKind
 import com.hiromishikata.timetrackingradio.domain.CellKey
+import com.hiromishikata.timetrackingradio.domain.SelectionRequest
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.After
@@ -50,7 +51,7 @@ class WidgetWorkBelowAndroid12Test {
         WidgetSelectionWorker.controllerFactory = {
             WidgetController(it, { transport }, { EchoSelectionTransport() }, publish = { _, snapshot -> rendered += snapshot })
         }
-        WidgetWorkScheduler.enqueueTap(context, meeting, acceptedTapAt(meeting))
+        WidgetWorkScheduler.enqueueTap(context, meeting, acceptedTapAt(meeting), SelectionRequest.Select(meeting))
         val work = advanceUniqueWork(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
         assertEquals("work state", WorkInfo.State.SUCCEEDED, work.state)
         assertEquals(

@@ -55,7 +55,7 @@ class WidgetDiagnosticsUploadWorkerTest {
 
     @Test
     fun anUploadThatThrowsFailsTheWorkAndLeavesTheSelectionUnchanged() {
-        val before = WidgetSnapshot(Selection(meeting, since), since, WidgetOutcome.Settled, null)
+        val before = WidgetSnapshot(Selection(meeting, since), since, WidgetOutcome.Settled, null, null)
         widgetSnapshots(context).write(before)
         val rendered = mutableListOf<WidgetSnapshot>()
         val transport = EchoSelectionTransport()
