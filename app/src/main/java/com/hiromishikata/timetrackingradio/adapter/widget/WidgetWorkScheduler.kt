@@ -15,15 +15,14 @@ import androidx.work.workDataOf
 import com.hiromishikata.timetrackingradio.domain.CellKey
 import com.hiromishikata.timetrackingradio.domain.SelectionRequest
 import java.time.Instant
-import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 object WidgetWorkScheduler {
     private const val TAP_RETRY_INITIAL_BACKOFF_SECONDS = 10L
 
-    fun enqueueTap(context: Context, cell: CellKey, tappedAt: Instant, request: SelectionRequest): UUID {
+    fun buildTapRequest(cell: CellKey, tappedAt: Instant, request: SelectionRequest): OneTimeWorkRequest {
         require(request !is SelectionRequest.Select || request.cell == cell) { "a tap's selection request names another cell" }
-        val work = OneTimeWorkRequestBuilder<WidgetSelectionWorker>()
+        return OneTimeWorkRequestBuilder<WidgetSelectionWorker>()
             .setInputData(
                 workDataOf(
                     WidgetSelectionWorker.KEY_PROJECT to cell.project,
@@ -36,12 +35,14 @@ object WidgetWorkScheduler {
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, TAP_RETRY_INITIAL_BACKOFF_SECONDS, TimeUnit.SECONDS)
             .build()
+    }
+
+    fun enqueueWorkRequest(context: Context, workRequest: OneTimeWorkRequest) {
         WorkManager.getInstance(context).enqueueUniqueWork(
             WidgetSelectionWorker.UNIQUE_WORK_NAME,
             ExistingWorkPolicy.APPEND_OR_REPLACE,
-            work,
+            workRequest,
         )
-        return work.id
     }
 
     fun enqueueRefresh(context: Context) {

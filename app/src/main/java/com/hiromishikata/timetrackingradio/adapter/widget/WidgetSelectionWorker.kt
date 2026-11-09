@@ -21,7 +21,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import java.time.DateTimeException
 import java.time.Instant
-import java.util.UUID
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 import java.util.concurrent.Future
@@ -47,10 +46,11 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
     private suspend fun runSelection(): Result {
         val controller = controllerFactory(applicationContext)
         return try {
-            controller.dropFinishedWork { workId -> workFinished(workId) }
+            val ownTap = requestedStampedTapOrNull()
+            controller.dropFinishedWork(ownTap?.cell, ownTap?.tappedAt) { uniqueWorkInfos() }
             when (val work = requestedWork()) {
                 RequestedWork.Refresh -> controller.refresh()
-                is RequestedWork.StampedTap -> controller.performTap(work.cell, work.request, work.tappedAt)
+                is RequestedWork.StampedTap -> controller.performWorkTap(work.cell, work.request, work.tappedAt, id)
                 is RequestedWork.LegacyTap -> controller.performLegacyTap(work.cell)
             }
             currentCoroutineContext().ensureActive()
@@ -70,13 +70,9 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
         }
     }
 
-    private fun workFinished(workId: UUID): Boolean = try {
-        val info = WorkManager.getInstance(applicationContext).getWorkInfoById(workId).get(WORK_INFO_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-        info == null || info.state in FINISHED_STATES
-    } catch (failure: Exception) {
-        logWidgetWorkFailure(failure)
-        false
-    }
+    private fun uniqueWorkInfos(): List<WorkInfo> = WorkManager.getInstance(applicationContext)
+        .getWorkInfosForUniqueWork(UNIQUE_WORK_NAME)
+        .get(WORK_INFO_TIMEOUT_SECONDS, TimeUnit.SECONDS)
 
     private fun requestedWork(): RequestedWork {
         val project = inputData.getString(KEY_PROJECT)
@@ -108,7 +104,6 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
     companion object {
         const val UNIQUE_WORK_NAME = "widget-selection"
         private const val WORK_INFO_TIMEOUT_SECONDS = 5L
-        private val FINISHED_STATES = setOf(WorkInfo.State.SUCCEEDED, WorkInfo.State.FAILED, WorkInfo.State.CANCELLED)
         const val KEY_PROJECT = "project"
         const val KEY_ACTIVITY = "activity"
         const val KEY_TAPPED_AT = "tappedAt"
