@@ -593,7 +593,7 @@ class WidgetControllerTest {
             val sending = awaitLastRendered(rendered) { !WAITING_FOR_NETWORK_TEXT.containsMatchIn(renderedStatusText(context, it)) }
             val status = renderedStatusText(context, sending)
             assertTrue("status=$status", status.startsWith("Switching to project-a / meeting"))
-            assertEquals(SelectionRequest.Select(meeting), sending.sending)
+            assertEquals(SelectionRequest.Select(work), sending.sending)
         } finally {
             transport.releaseSelection.countDown()
             first.join(5_000)

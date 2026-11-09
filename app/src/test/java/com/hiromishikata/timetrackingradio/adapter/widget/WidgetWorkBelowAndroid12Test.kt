@@ -18,6 +18,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.net.UnknownHostException
+import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
@@ -26,6 +27,9 @@ import java.util.concurrent.atomic.AtomicReference
 class WidgetWorkBelowAndroid12Test {
     private val context: Context = RuntimeEnvironment.getApplication()
     private val meeting = CellKey("project-a", ActivityKind.MEETING)
+
+    private fun acceptedTapAt(cell: CellKey): Instant =
+        WidgetController(context, publish = { _, _ -> }).acceptTap(cell, workEnqueued = true)
 
     @Before
     fun setUp() {
@@ -46,7 +50,7 @@ class WidgetWorkBelowAndroid12Test {
         WidgetSelectionWorker.controllerFactory = {
             WidgetController(it, { transport }, { EchoSelectionTransport() }, publish = { _, snapshot -> rendered += snapshot })
         }
-        WidgetWorkScheduler.enqueueTap(context, meeting, TEST_TAPPED_AT)
+        WidgetWorkScheduler.enqueueTap(context, meeting, acceptedTapAt(meeting))
         val work = advanceUniqueWork(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
         assertEquals("work state", WorkInfo.State.SUCCEEDED, work.state)
         assertEquals(
