@@ -1,10 +1,17 @@
 package com.hiromishikata.timetrackingradio.adapter.widget
 
 import android.content.Context
+import android.content.Intent
+import android.view.View
+import android.view.ViewGroup
+import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.TextView
 import androidx.work.Configuration
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.testing.WorkManagerTestInitHelper
+import com.hiromishikata.timetrackingradio.R
 import com.hiromishikata.timetrackingradio.adapter.http.HttpRequest
 import com.hiromishikata.timetrackingradio.adapter.http.HttpResponse
 import com.hiromishikata.timetrackingradio.adapter.http.HttpTransport
@@ -12,7 +19,15 @@ import com.hiromishikata.timetrackingradio.adapter.store.KeyValueDiagnosticLogRe
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueWidgetSnapshotRepository
 import com.hiromishikata.timetrackingradio.adapter.store.SETTINGS_PREFERENCES_NAME
 import com.hiromishikata.timetrackingradio.adapter.store.SharedPreferencesKeyValueStore
+import com.hiromishikata.timetrackingradio.domain.ActivityKind
+import com.hiromishikata.timetrackingradio.domain.CellKey
 import com.hiromishikata.timetrackingradio.domain.WidgetSettings
+import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import org.robolectric.Shadows
+import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -98,6 +113,68 @@ internal fun awaitUniqueWork(
 
 internal fun awaitWorkFinished(context: Context, uniqueWorkName: String, timeoutMillis: Long = 30_000) {
     awaitUniqueWork(context, uniqueWorkName, "work finishing", timeoutMillis) { infos -> infos.all { it.state.isFinished } }
+}
+
+internal val TEST_TAPPED_AT: Instant = Instant.parse("2026-11-09T02:19:03.112Z")
+
+internal const val TEST_TAPPED_AT_TEXT = "2026-11-09T02:19:03.112Z"
+
+internal val WAITING_FOR_NETWORK_TEXT = Regex("waiting for (the )?network", RegexOption.IGNORE_CASE)
+
+internal fun cellTapIntent(project: String, activity: String): Intent =
+    Intent(SelectionWidgetProvider.ACTION_CELL_TAP)
+        .putExtra(SelectionWidgetProvider.EXTRA_PROJECT, project)
+        .putExtra(SelectionWidgetProvider.EXTRA_ACTIVITY, activity)
+
+internal fun driveUniqueWorkToFinish(context: Context, uniqueWorkName: String, timeoutMillis: Long = 60_000) {
+    val driver = checkNotNull(WorkManagerTestInitHelper.getTestDriver(context))
+    val deadline = System.currentTimeMillis() + timeoutMillis
+    while (true) {
+        val infos = uniqueWorkInfos(context, uniqueWorkName)
+        if (infos.all { it.state.isFinished }) return
+        check(System.currentTimeMillis() < deadline) {
+            "$uniqueWorkName did not finish within $timeoutMillis ms; last states: ${infos.map { it.state }}"
+        }
+        infos.filterNot { it.state.isFinished }.forEach { info ->
+            driver.setAllConstraintsMet(info.id)
+            driver.setInitialDelayMet(info.id)
+        }
+        Thread.sleep(10)
+    }
+}
+
+internal fun meetAllConstraints(context: Context, uniqueWorkName: String) {
+    val driver = checkNotNull(WorkManagerTestInitHelper.getTestDriver(context))
+    uniqueWorkInfos(context, uniqueWorkName).filterNot { it.state.isFinished }.forEach { info ->
+        driver.setAllConstraintsMet(info.id)
+        driver.setInitialDelayMet(info.id)
+    }
+}
+
+internal fun meetConstraintsOnceQueued(context: Context, uniqueWorkName: String) {
+    awaitUniqueWork(context, uniqueWorkName, "work being queued") { it.isNotEmpty() }
+    meetAllConstraints(context, uniqueWorkName)
+}
+
+internal fun postedBodyOf(request: HttpRequest): JsonObject =
+    Json.parseToJsonElement(request.body.orEmpty()).jsonObject
+
+internal fun renderedView(context: Context, snapshot: WidgetSnapshot): View =
+    SelectionWidgetRemoteViewsFactory(context)
+        .build(WIDGET_TEST_SETTINGS, snapshot, Instant.parse("2026-11-09T02:19:03.112Z"))
+        .apply(context, FrameLayout(context))
+
+internal fun renderedStatusText(context: Context, snapshot: WidgetSnapshot): String =
+    renderedView(context, snapshot).findViewById<TextView>(R.id.status_text).text.toString()
+
+internal fun renderedCellDrawableResId(context: Context, snapshot: WidgetSnapshot, cell: CellKey): Int {
+    val rowIndex = WIDGET_TEST_SETTINGS.projects.indexOf(cell.project)
+    val row = renderedView(context, snapshot).findViewById<ViewGroup>(R.id.grid_rows).getChildAt(rowIndex)
+    val iconId = when (cell.activity) {
+        ActivityKind.WORK -> R.id.cell_work_icon
+        ActivityKind.MEETING -> R.id.cell_meeting_icon
+    }
+    return Shadows.shadowOf(row.findViewById<ImageView>(iconId).drawable).createdFromResId
 }
 
 internal fun installHarmlessWidgetWorkFactories() {
