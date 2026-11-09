@@ -20,6 +20,7 @@ import com.hiromishikata.timetrackingradio.domain.CellKey
 import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
 import com.hiromishikata.timetrackingradio.domain.DiagnosticRecorder
 import com.hiromishikata.timetrackingradio.domain.NetworkUnavailableException
+import com.hiromishikata.timetrackingradio.domain.Selection
 import com.hiromishikata.timetrackingradio.domain.SelectionRequest
 import com.hiromishikata.timetrackingradio.domain.WidgetOutcome
 import com.hiromishikata.timetrackingradio.domain.WidgetSettings
@@ -35,7 +36,9 @@ import java.time.Instant
 
 private val SENDING_STATE_MAX_AGE: Duration = Duration.ofMinutes(10)
 
-private val PENDING_TAP_MAX_AGE: Duration = Duration.ofHours(24)
+private val PENDING_TAP_DISPLAY_MAX_AGE: Duration = Duration.ofHours(24)
+
+data class AcceptedTap(val tappedAt: Instant, val request: SelectionRequest)
 
 class WidgetController(
     private val context: Context,
@@ -61,23 +64,25 @@ class WidgetController(
         publishSettled()
     }
 
-    fun tapRequestFor(cell: CellKey): SelectionRequest = resolveTapRequest(snapshots.read().selection, cell)
-
-    fun acceptTap(cell: CellKey, workEnqueued: Boolean): Instant {
+    fun acceptTap(cell: CellKey, workEnqueued: Boolean): AcceptedTap {
         val tappedAt = clock()
         val loaded = settings.read()
         recorderFor(loaded).record(
             DiagnosticEventType.TAP_RECEIVED,
             "project=${cell.project}, activity=${cell.activity.code}",
         )
-        if (loaded != null) {
-            synchronized(WidgetStateLock) {
-                val request = tapRequestFor(cell)
-                queuedTaps.write(liveQueue(tappedAt) + QueuedTap(cell, tappedAt, request, workEnqueued, waiting = workEnqueued))
+        val request = synchronized(WidgetStateLock) {
+            val pending = storedQueue(tappedAt)
+            val resolved = resolveTapRequest(projectSelection(snapshots.read().selection, pending), cell)
+            if (loaded != null) {
+                queuedTaps.write(pending + QueuedTap(cell, tappedAt, resolved, workEnqueued, waiting = workEnqueued))
             }
+            resolved
+        }
+        if (loaded != null) {
             render()
         }
-        return tappedAt
+        return AcceptedTap(tappedAt, request)
     }
 
     suspend fun performTap(cell: CellKey, request: SelectionRequest, tappedAt: Instant) {
@@ -146,9 +151,10 @@ class WidgetController(
             awaitingNetwork = true
             throw unavailable
         } finally {
+            val now = clock()
             publishSettled { entries ->
                 when {
-                    awaitingNetwork -> entries.withPendingWork(cell, tappedAt, request)
+                    awaitingNetwork -> entries.withPendingWork(cell, tappedAt, request, now)
                     completed -> entries.withoutTap(cell, tappedAt)
                     else -> entries
                 }
@@ -171,10 +177,11 @@ class WidgetController(
 
     private fun settle(update: (List<QueuedTap>) -> List<QueuedTap> = { it }): WidgetSnapshot = synchronized(WidgetStateLock) {
         val now = clock()
-        val remaining = update(liveQueue(now))
+        val remaining = update(storedQueue(now))
         queuedTaps.write(remaining)
-        val head = remaining.firstOrNull()
-        val last = remaining.lastOrNull()
+        val shown = remaining.displayed(now)
+        val head = shown.firstOrNull()
+        val last = shown.lastOrNull()
         val current = snapshots.read()
         val outcome = when {
             head?.waiting == true -> WidgetOutcome.WaitingForNetwork
@@ -186,9 +193,8 @@ class WidgetController(
         settled
     }
 
-    private fun liveQueue(now: Instant): List<QueuedTap> = queuedTaps.readAll().filterNot { entry ->
-        val maxAge = if (entry.workEnqueued) PENDING_TAP_MAX_AGE else SENDING_STATE_MAX_AGE
-        entry.acceptedAt.isBefore(now.minus(maxAge))
+    private fun storedQueue(now: Instant): List<QueuedTap> = queuedTaps.readAll().filterNot { entry ->
+        !entry.workEnqueued && entry.acceptedAt.isBefore(now.minus(SENDING_STATE_MAX_AGE))
     }
 
     private fun recorderFor(current: WidgetSettings?): DiagnosticRecorder = DiagnosticRecorder(
@@ -221,10 +227,31 @@ private fun List<QueuedTap>.withWaiting(cell: CellKey, tappedAt: Instant, waitin
     }
 }
 
-private fun List<QueuedTap>.withPendingWork(cell: CellKey, tappedAt: Instant, request: SelectionRequest): List<QueuedTap> {
+private fun List<QueuedTap>.displayed(now: Instant): List<QueuedTap> = filterNot { entry ->
+    entry.workEnqueued && entry.acceptedAt.isBefore(now.minus(PENDING_TAP_DISPLAY_MAX_AGE))
+}
+
+private fun projectSelection(confirmed: Selection?, pending: List<QueuedTap>): Selection? =
+    pending.filter { it.workEnqueued }.fold(confirmed) { _, entry ->
+        when (val request = entry.request) {
+            is SelectionRequest.Select -> Selection(request.cell, entry.acceptedAt)
+            SelectionRequest.Clear -> null
+        }
+    }
+
+private fun List<QueuedTap>.withPendingWork(
+    cell: CellKey,
+    tappedAt: Instant,
+    request: SelectionRequest,
+    now: Instant,
+): List<QueuedTap> {
     val index = indexOfTap(cell, tappedAt)
     return if (index < 0) {
-        this + QueuedTap(cell, tappedAt, request, workEnqueued = true, waiting = true)
+        if (tappedAt.isBefore(now.minus(PENDING_TAP_DISPLAY_MAX_AGE))) {
+            this
+        } else {
+            this + QueuedTap(cell, tappedAt, request, workEnqueued = true, waiting = true)
+        }
     } else {
         mapIndexed { position, entry ->
             if (position == index) entry.copy(workEnqueued = true, waiting = true) else entry
