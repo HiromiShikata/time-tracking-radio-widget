@@ -1,5 +1,6 @@
 package com.hiromishikata.timetrackingradio.adapter.widget
 
+import java.util.UUID
 import android.content.Context
 import androidx.work.ListenableWorker
 import androidx.work.testing.TestListenableWorkerBuilder
@@ -46,7 +47,7 @@ class WidgetDiagnosticsUploadWorkerTest {
     fun aPendingEntryIsUploadedAndTheWorkSucceeds() {
         val transport = EchoSelectionTransport()
         WidgetDiagnosticsUploadWorker.controllerFactory = { WidgetController(it, { transport }, { transport }, publish = { _, _ -> }) }
-        WidgetController(context, { transport }, { transport }, publish = { _, _ -> }).acceptTap(meeting, workEnqueued = false)
+        WidgetController(context, { transport }, { transport }, publish = { _, _ -> }).acceptTap(meeting, workEnqueued = false, workId = UUID.randomUUID())
         val result = TestListenableWorkerBuilder<WidgetDiagnosticsUploadWorker>(context).build().startWork().get()
         assertTrue("result=$result", result is ListenableWorker.Result.Success)
         assertEquals(listOf("POST"), transport.requests.map { it.method })

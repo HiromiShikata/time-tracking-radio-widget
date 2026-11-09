@@ -41,7 +41,7 @@ class WidgetWorkSchedulerTest {
     private lateinit var executor: ExecutorService
 
     private fun acceptedTapAt(cell: CellKey): Instant =
-        WidgetController(context, publish = { _, _ -> }).acceptTap(cell, workEnqueued = true).tappedAt
+        WidgetController(context, publish = { _, _ -> }).acceptTap(cell, workEnqueued = true, workId = UUID.randomUUID()).tappedAt
 
     @Before
     fun setUp() {

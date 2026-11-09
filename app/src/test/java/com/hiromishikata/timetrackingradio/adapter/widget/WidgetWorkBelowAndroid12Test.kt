@@ -1,5 +1,6 @@
 package com.hiromishikata.timetrackingradio.adapter.widget
 
+import java.util.UUID
 import android.content.Context
 import androidx.work.WorkInfo
 import androidx.work.testing.WorkManagerTestInitHelper
@@ -30,7 +31,7 @@ class WidgetWorkBelowAndroid12Test {
     private val meeting = CellKey("project-a", ActivityKind.MEETING)
 
     private fun acceptedTapAt(cell: CellKey): Instant =
-        WidgetController(context, publish = { _, _ -> }).acceptTap(cell, workEnqueued = true).tappedAt
+        WidgetController(context, publish = { _, _ -> }).acceptTap(cell, workEnqueued = true, workId = UUID.randomUUID()).tappedAt
 
     @Before
     fun setUp() {

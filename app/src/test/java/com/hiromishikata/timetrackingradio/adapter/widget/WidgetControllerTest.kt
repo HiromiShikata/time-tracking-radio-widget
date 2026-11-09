@@ -1,5 +1,6 @@
 package com.hiromishikata.timetrackingradio.adapter.widget
 
+import java.util.UUID
 import android.content.Context
 import androidx.work.Data
 import androidx.work.ListenableWorker
@@ -129,7 +130,7 @@ class WidgetControllerTest {
     fun performTapWithoutSettingsDoesNothing() {
         val transport = FakeHttpTransport(ArrayDeque())
         val controller = controller(transport)
-        val accepted = controller.acceptTap(meeting, workEnqueued = true)
+        val accepted = controller.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
         runStoredTap(storedTapInput(context, meeting, accepted.tappedAt, accepted.request), transport)
         assertEquals(emptyList<HttpRequest>(), transport.requests)
         assertEquals(WidgetSnapshot.EMPTY, KeyValueWidgetSnapshotRepository(store).read())
@@ -141,7 +142,7 @@ class WidgetControllerTest {
         val body = """{"result":"ok","selection":{"project":"project-a","activity":"meeting","since":"2026-11-07T08:39:00Z"}}"""
         val transport = FakeHttpTransport(ArrayDeque(listOf({ HttpResponse(200, null, body) })))
         val controller = controller(transport)
-        val accepted = controller.acceptTap(meeting, workEnqueued = true)
+        val accepted = controller.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
         runStoredTap(storedTapInput(context, meeting, accepted.tappedAt, accepted.request), transport)
         val stored = KeyValueWidgetSnapshotRepository(store).read()
         assertEquals(WidgetSnapshot(Selection(meeting, since), stored.fetchedAt, WidgetOutcome.Settled, null, null), stored)
@@ -164,7 +165,7 @@ class WidgetControllerTest {
         val rendered = mutableListOf<WidgetSnapshot>()
         val transport = FakeHttpTransport(ArrayDeque(listOf({ throw IllegalStateException("unexpected") })))
         val controller = WidgetController(context, { transport }, { transport }, publish = { _, snapshot -> rendered += snapshot })
-        val accepted = controller.acceptTap(meeting, workEnqueued = true)
+        val accepted = controller.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
         rendered.clear()
         val result = runStoredTap(storedTapInput(context, meeting, accepted.tappedAt, accepted.request), transport, publish = { _, snapshot -> rendered += snapshot })
         controller.discardTap(meeting, accepted.tappedAt)
@@ -181,7 +182,7 @@ class WidgetControllerTest {
             ArrayDeque(listOf({ HttpResponse(200, null, selection) }, { HttpResponse(200, null, """{"result":"ok","accepted":3}""") })),
         )
         val controller = controller(transport)
-        val accepted = controller.acceptTap(meeting, workEnqueued = true)
+        val accepted = controller.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
         runStoredTap(storedTapInput(context, meeting, accepted.tappedAt, accepted.request), transport)
         assertEquals(listOf("POST"), transport.requests.map { it.method })
         assertFalse(transport.requests.any { it.body.orEmpty().startsWith("{\"diagnostics\":[") })
@@ -202,7 +203,7 @@ class WidgetControllerTest {
             ),
         )
         val controller = controller(transport)
-        val accepted = controller.acceptTap(meeting, workEnqueued = true)
+        val accepted = controller.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
         val result = runStoredTap(storedTapInput(context, meeting, accepted.tappedAt, accepted.request), transport)
         assertTrue("result=$result", result is ListenableWorker.Result.Success)
         assertEquals(1, transport.requests.size)
@@ -224,7 +225,7 @@ class WidgetControllerTest {
     @Test
     fun anAcceptedTapWithoutSettingsRecordsTheTapAndSendsNothing() {
         val transport = FakeHttpTransport(ArrayDeque())
-        controller(transport).acceptTap(meeting, workEnqueued = false)
+        controller(transport).acceptTap(meeting, workEnqueued = false, workId = UUID.randomUUID())
         assertEquals(listOf("tap_received"), KeyValueDiagnosticLogRepository(store).readAll().map { it.type.code })
         assertEquals(emptyList<HttpRequest>(), transport.requests)
     }
@@ -240,7 +241,7 @@ class WidgetControllerTest {
     fun acceptTapRecordsTheTapAsAnUndeliveredEntryWithoutNetwork() {
         KeyValueWidgetSettingsRepository(store).write(settings)
         val transport = ForbiddenTransport()
-        WidgetController(context, { transport }, { transport }, publish = { _, _ -> }).acceptTap(meeting, workEnqueued = false)
+        WidgetController(context, { transport }, { transport }, publish = { _, _ -> }).acceptTap(meeting, workEnqueued = false, workId = UUID.randomUUID())
         val entry = KeyValueDiagnosticLogRepository(store).readAll().single { it.type == DiagnosticEventType.TAP_RECEIVED }
         assertEquals("project=project-a, activity=meeting", entry.detail)
         assertFalse(entry.delivered)
@@ -266,7 +267,7 @@ class WidgetControllerTest {
             KeyValueWidgetSnapshotRepository(store).write(WidgetSnapshot(case.previous, since, WidgetOutcome.Settled, null, null))
             val transport = ForbiddenTransport()
             val rendered = mutableListOf<WidgetSnapshot>()
-            WidgetController(context, { transport }, { transport }, publish = { _, snapshot -> rendered += snapshot }).acceptTap(case.tapped, workEnqueued = false)
+            WidgetController(context, { transport }, { transport }, publish = { _, snapshot -> rendered += snapshot }).acceptTap(case.tapped, workEnqueued = false, workId = UUID.randomUUID())
             val stored = KeyValueWidgetSnapshotRepository(store).read()
             assertEquals("case=${case.name}", 0, transport.calls)
             assertEquals("case=${case.name}", case.expectedSending, stored.sending)
@@ -291,7 +292,7 @@ class WidgetControllerTest {
             val controller = WidgetController(context, { transport }, { transport }, publish = { _, snapshot -> rendered += snapshot })
             val accepted = case.acceptedCell
             val cell = accepted ?: meeting
-            val tappedAt = if (accepted != null) controller.acceptTap(accepted, workEnqueued = false).tappedAt else since
+            val tappedAt = if (accepted != null) controller.acceptTap(accepted, workEnqueued = false, workId = UUID.randomUUID()).tappedAt else since
             assertEquals("case=${case.name}", case.expectedSending, KeyValueWidgetSnapshotRepository(store).read().sending)
             controller.discardTap(cell, tappedAt)
             controller.discardTap(cell, tappedAt)
@@ -316,7 +317,7 @@ class WidgetControllerTest {
                 ArrayDeque<() -> HttpResponse>(listOf({ HttpResponse(200, null, """{"result":"ok","accepted":1}""") })),
             )
             val controller = controller(transport)
-            controller.acceptTap(meeting, workEnqueued = false)
+            controller.acceptTap(meeting, workEnqueued = false, workId = UUID.randomUUID())
             controller.uploadDiagnostics()
             assertEquals("case=${case.name}", case.expectedMethods, transport.requests.map { it.method })
             val tapEntry = KeyValueDiagnosticLogRepository(store).readAll().single { it.type == DiagnosticEventType.TAP_RECEIVED }
@@ -334,12 +335,12 @@ class WidgetControllerTest {
             if (snapshot.sending == SelectionRequest.Select(nextCell)) nextTapRendered.countDown()
         }
         val firstController = WidgetController(context, { transport }, { transport }, publish)
-        val firstAccepted = firstController.acceptTap(meeting, workEnqueued = true)
+        val firstAccepted = firstController.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
         val firstInput = storedTapInput(context, meeting, firstAccepted.tappedAt, firstAccepted.request)
         val first = thread { runStoredTap(firstInput, transport, publish) }
         try {
             assertTrue("the first selection request started", transport.selectionStarted.await(5, TimeUnit.SECONDS))
-            WidgetController(context, { transport }, { transport }, publish).acceptTap(nextCell, workEnqueued = false)
+            WidgetController(context, { transport }, { transport }, publish).acceptTap(nextCell, workEnqueued = false, workId = UUID.randomUUID())
             val rendered = nextTapRendered.await(2, TimeUnit.SECONDS)
             assertTrue("the next tap rendered its sending state while the selection request was still blocked", rendered)
         } finally {
@@ -358,12 +359,12 @@ class WidgetControllerTest {
         val rendered = CopyOnWriteArrayList<WidgetSnapshot>()
         val publish: (WidgetSettings?, WidgetSnapshot) -> Unit = { _, snapshot -> rendered += snapshot }
         val firstController = WidgetController(context, { transport }, { transport }, publish)
-        val firstAccepted = firstController.acceptTap(meeting, workEnqueued = true)
+        val firstAccepted = firstController.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
         val firstInput = storedTapInput(context, meeting, firstAccepted.tappedAt, firstAccepted.request)
         val first = thread { runStoredTap(firstInput, transport, publish) }
         try {
             assertTrue("the first selection request started", transport.selectionStarted.await(5, TimeUnit.SECONDS))
-            WidgetController(context, { transport }, { transport }, publish).acceptTap(queued, workEnqueued = false)
+            WidgetController(context, { transport }, { transport }, publish).acceptTap(queued, workEnqueued = false, workId = UUID.randomUUID())
         } finally {
             transport.releaseSelection.countDown()
             first.join(5_000)
@@ -378,7 +379,7 @@ class WidgetControllerTest {
         val rendered = mutableListOf<WidgetSnapshot>()
         val transport = FakeHttpTransport(ArrayDeque<() -> HttpResponse>(listOf({ HttpResponse(200, null, clearedBody) })))
         val controller = recordingController(transport, rendered)
-        controller.acceptTap(work, workEnqueued = false)
+        controller.acceptTap(work, workEnqueued = false, workId = UUID.randomUUID())
         runBlocking { controller.refresh() }
         assertEquals(SelectionRequest.Select(work), KeyValueWidgetSnapshotRepository(store).read().sending)
         assertEquals(SelectionRequest.Select(work), rendered.last().sending)
@@ -393,8 +394,8 @@ class WidgetControllerTest {
             ),
         )
         val controller = controller(transport)
-        val firstAccepted = controller.acceptTap(meeting, workEnqueued = true)
-        val secondAccepted = controller.acceptTap(meeting, workEnqueued = true)
+        val firstAccepted = controller.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
+        val secondAccepted = controller.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
         runStoredTap(storedTapInput(context, meeting, firstAccepted.tappedAt, firstAccepted.request), transport)
         val afterFirst = KeyValueWidgetSnapshotRepository(store).read()
         assertEquals("after the first work the ring is still on the cell", CellVisual.SENDING, resolveCellVisual(meeting, afterFirst.selection, afterFirst.sending))
@@ -408,8 +409,8 @@ class WidgetControllerTest {
         val rendered = mutableListOf<WidgetSnapshot>()
         val transport = FakeHttpTransport(ArrayDeque<() -> HttpResponse>(listOf({ throw IllegalStateException("unexpected") })))
         val controller = recordingController(transport, rendered)
-        val accepted = controller.acceptTap(meeting, workEnqueued = true)
-        controller.acceptTap(work, workEnqueued = false)
+        val accepted = controller.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
+        controller.acceptTap(work, workEnqueued = false, workId = UUID.randomUUID())
         val result = runStoredTap(storedTapInput(context, meeting, accepted.tappedAt, accepted.request), transport, publish = { _, snapshot -> rendered += snapshot })
         assertTrue("result=$result", result is ListenableWorker.Result.Success)
         controller.discardTap(meeting, accepted.tappedAt)
@@ -423,12 +424,12 @@ class WidgetControllerTest {
         val transport = GatedSelectionTransport(selectedMeetingBody)
         val rendered = CopyOnWriteArrayList<WidgetSnapshot>()
         val earlierController = recordingController(transport, rendered)
-        val earlierAccepted = earlierController.acceptTap(meeting, workEnqueued = true)
+        val earlierAccepted = earlierController.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
         val earlierInput = storedTapInput(context, meeting, earlierAccepted.tappedAt, earlierAccepted.request)
         val first = thread { runStoredTap(earlierInput, transport, publish = { _, snapshot -> rendered += snapshot }) }
         try {
             assertTrue("the earlier selection request started", transport.selectionStarted.await(5, TimeUnit.SECONDS))
-            recordingController(transport, rendered).acceptTap(work, workEnqueued = false)
+            recordingController(transport, rendered).acceptTap(work, workEnqueued = false, workId = UUID.randomUUID())
         } finally {
             transport.releaseSelection.countDown()
             first.join(5_000)
@@ -451,7 +452,7 @@ class WidgetControllerTest {
             val rendered = mutableListOf<WidgetSnapshot>()
             val transport = ForbiddenTransport()
             val controller = recordingController(transport, rendered) { now }
-            controller.acceptTap(work, workEnqueued = false)
+            controller.acceptTap(work, workEnqueued = false, workId = UUID.randomUUID())
             now = acceptedAt.plusSeconds(case.minutesAfterAcceptance * 60)
             controller.render()
             assertEquals("case=${case.name}", case.expectedSending, rendered.last().sending)
@@ -464,7 +465,7 @@ class WidgetControllerTest {
         KeyValueWidgetSettingsRepository(store).write(settings)
         val rendered = mutableListOf<WidgetSnapshot>()
         val controller = recordingController(ForbiddenTransport(), rendered)
-        controller.acceptTap(work, workEnqueued = false)
+        controller.acceptTap(work, workEnqueued = false, workId = UUID.randomUUID())
         controller.render()
         assertEquals(SelectionRequest.Select(work), KeyValueWidgetSnapshotRepository(store).read().sending)
         assertEquals(SelectionRequest.Select(work), rendered.last().sending)
@@ -475,9 +476,9 @@ class WidgetControllerTest {
         KeyValueWidgetSettingsRepository(store).write(settings)
         var now = acceptedAt
         val controller = recordingController(ForbiddenTransport(), mutableListOf()) { now }
-        val firstAt = controller.acceptTap(meeting, workEnqueued = false).tappedAt
+        val firstAt = controller.acceptTap(meeting, workEnqueued = false, workId = UUID.randomUUID()).tappedAt
         now = acceptedAt.plusSeconds(1)
-        val secondAt = controller.acceptTap(meeting, workEnqueued = false).tappedAt
+        val secondAt = controller.acceptTap(meeting, workEnqueued = false, workId = UUID.randomUUID()).tappedAt
         controller.discardTap(meeting, firstAt)
         assertEquals(SelectionRequest.Select(meeting), KeyValueWidgetSnapshotRepository(store).read().sending)
         controller.discardTap(meeting, secondAt)
@@ -499,7 +500,7 @@ class WidgetControllerTest {
         KeyValueWidgetSettingsRepository(store).write(settings)
         val rendered = mutableListOf<WidgetSnapshot>()
         val transport = ForbiddenTransport()
-        recordingController(transport, rendered).acceptTap(work, workEnqueued = true)
+        recordingController(transport, rendered).acceptTap(work, workEnqueued = true, workId = UUID.randomUUID())
         val snapshot = rendered.last()
         val status = renderedStatusText(context, snapshot)
         assertEquals(SelectionRequest.Select(work), snapshot.sending)
@@ -514,7 +515,7 @@ class WidgetControllerTest {
         val transport = GatedSelectionTransport(selectedMeetingBody)
         val rendered = CopyOnWriteArrayList<WidgetSnapshot>()
         val workController = recordingController(transport, rendered)
-        val accepted = workController.acceptTap(work, workEnqueued = true)
+        val accepted = workController.acceptTap(work, workEnqueued = true, workId = UUID.randomUUID())
         assertTrue("waiting before the POST starts", WAITING_FOR_NETWORK_TEXT.containsMatchIn(renderedStatusText(context, rendered.last())))
         val input = storedTapInput(context, work, accepted.tappedAt, accepted.request)
         val first = thread { runStoredTap(input, transport, publish = { _, snapshot -> rendered += snapshot }) }
@@ -538,7 +539,7 @@ class WidgetControllerTest {
         val clock = AtomicReference(acceptedAt)
         val rendered = CopyOnWriteArrayList<WidgetSnapshot>()
         val workController = recordingController(transport, rendered) { clock.get() }
-        val accepted = workController.acceptTap(work, workEnqueued = true)
+        val accepted = workController.acceptTap(work, workEnqueued = true, workId = UUID.randomUUID())
         val input = storedTapInput(context, work, accepted.tappedAt, accepted.request)
         val first = thread { runStoredTap(input, transport, { _, snapshot -> rendered += snapshot }) { clock.get() } }
         try {
@@ -558,7 +559,7 @@ class WidgetControllerTest {
         val clock = AtomicReference(acceptedAt)
         val rendered = mutableListOf<WidgetSnapshot>()
         val controller = recordingController(ForbiddenTransport(), rendered) { clock.get() }
-        controller.acceptTap(work, workEnqueued = true)
+        controller.acceptTap(work, workEnqueued = true, workId = UUID.randomUUID())
         clock.set(acceptedAt.plusSeconds((23 * 60 + 59) * 60L))
         controller.render()
         val status = renderedStatusText(context, rendered.last())
@@ -573,7 +574,7 @@ class WidgetControllerTest {
         val clock = AtomicReference(acceptedAt)
         val rendered = mutableListOf<WidgetSnapshot>()
         val controller = recordingController(ForbiddenTransport(), rendered) { clock.get() }
-        val accepted = controller.acceptTap(work, workEnqueued = true)
+        val accepted = controller.acceptTap(work, workEnqueued = true, workId = UUID.randomUUID())
         val input = storedTapInput(context, work, accepted.tappedAt, accepted.request)
         clock.set(acceptedAt.plusSeconds((24 * 60 + 1) * 60L))
         controller.render()
@@ -602,10 +603,10 @@ class WidgetControllerTest {
         KeyValueWidgetSettingsRepository(store).write(settings)
         val clock = AtomicReference(acceptedAt)
         val controller = recordingController(ForbiddenTransport(), mutableListOf()) { clock.get() }
-        val older = controller.acceptTap(meeting, workEnqueued = true)
+        val older = controller.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
         val olderInput = storedTapInput(context, meeting, older.tappedAt, older.request)
         clock.set(acceptedAt.plusSeconds(25 * 60 * 60L))
-        val later = controller.acceptTap(meeting, workEnqueued = true)
+        val later = controller.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
         assertEquals(SelectionRequest.Clear, later.request)
         val sentTransport = FakeHttpTransport(ArrayDeque<() -> HttpResponse>(listOf({ HttpResponse(200, null, clearedBody) })))
         val result = try {
@@ -636,7 +637,7 @@ class WidgetControllerTest {
             val rendered = mutableListOf<WidgetSnapshot>()
             val transport = ForbiddenTransport()
             val controller = recordingController(transport, rendered) { clock.get() }
-            controller.acceptTap(work, workEnqueued = false)
+            controller.acceptTap(work, workEnqueued = false, workId = UUID.randomUUID())
             clock.set(acceptedAt.plusSeconds(case.secondsAfterAcceptance))
             controller.render()
             assertEquals("case=${case.name}", case.expectedSending, rendered.last().sending)
@@ -649,8 +650,8 @@ class WidgetControllerTest {
         KeyValueWidgetSettingsRepository(store).write(settings)
         val rendered = mutableListOf<WidgetSnapshot>()
         val controller = recordingController(ForbiddenTransport(), rendered) { tappedAt }
-        controller.acceptTap(meeting, workEnqueued = true)
-        controller.acceptTap(work, workEnqueued = true)
+        controller.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
+        controller.acceptTap(work, workEnqueued = true, workId = UUID.randomUUID())
         val snapshot = rendered.last()
         val status = renderedStatusText(context, snapshot)
         assertEquals(SelectionRequest.Select(work), snapshot.sending)
@@ -663,8 +664,8 @@ class WidgetControllerTest {
         val transport = GatedSelectionTransport(clearedBody)
         val rendered = CopyOnWriteArrayList<WidgetSnapshot>()
         val meetingController = recordingController(transport, rendered) { tappedAt }
-        val meetingAccepted = meetingController.acceptTap(meeting, workEnqueued = true)
-        recordingController(transport, rendered) { tappedAt }.acceptTap(work, workEnqueued = true)
+        val meetingAccepted = meetingController.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
+        recordingController(transport, rendered) { tappedAt }.acceptTap(work, workEnqueued = true, workId = UUID.randomUUID())
         val meetingInput = storedTapInput(context, meeting, meetingAccepted.tappedAt, meetingAccepted.request)
         val first = thread { runStoredTap(meetingInput, transport, { _, snapshot -> rendered += snapshot }) { tappedAt } }
         try {
@@ -685,8 +686,8 @@ class WidgetControllerTest {
         val transport = GatedSelectionTransport(clearedBody)
         val rendered = CopyOnWriteArrayList<WidgetSnapshot>()
         val meetingController = recordingController(transport, rendered) { tappedAt }
-        val meetingAccepted = meetingController.acceptTap(meeting, workEnqueued = true)
-        recordingController(transport, rendered) { tappedAt }.acceptTap(work, workEnqueued = true)
+        val meetingAccepted = meetingController.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
+        recordingController(transport, rendered) { tappedAt }.acceptTap(work, workEnqueued = true, workId = UUID.randomUUID())
         val meetingInput = storedTapInput(context, meeting, meetingAccepted.tappedAt, meetingAccepted.request)
         val first = thread { runStoredTap(meetingInput, transport, { _, snapshot -> rendered += snapshot }) { tappedAt } }
         try {
@@ -709,7 +710,7 @@ class WidgetControllerTest {
         KeyValueWidgetSnapshotRepository(store).write(WidgetSnapshot(Selection(meeting, since), since, WidgetOutcome.Settled, null, null))
         val transport = FakeHttpTransport(ArrayDeque<() -> HttpResponse>(listOf({ HttpResponse(200, null, clearedBody) })))
         val controller = recordingController(transport, mutableListOf()) { tappedAt }
-        val accepted = controller.acceptTap(projectAWork, workEnqueued = true)
+        val accepted = controller.acceptTap(projectAWork, workEnqueued = true, workId = UUID.randomUUID())
         val input = storedTapInput(context, projectAWork, accepted.tappedAt, accepted.request)
         KeyValueWidgetSnapshotRepository(store).write(WidgetSnapshot(Selection(projectAWork, since), since, WidgetOutcome.Settled, null, null))
         val result = runStoredTap(input, transport)
@@ -724,9 +725,9 @@ class WidgetControllerTest {
         val rendered = mutableListOf<WidgetSnapshot>()
         val transport = FakeHttpTransport(ArrayDeque<() -> HttpResponse>(listOf({ HttpResponse(200, null, selectedMeetingBody) })))
         val controller = recordingController(transport, rendered) { now }
-        val firstAccepted = controller.acceptTap(meeting, workEnqueued = true)
+        val firstAccepted = controller.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
         now = tappedAt.plusSeconds(1)
-        controller.acceptTap(meeting, workEnqueued = true)
+        controller.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
         runStoredTap(storedTapInput(context, meeting, firstAccepted.tappedAt, firstAccepted.request), transport, { _, snapshot -> rendered += snapshot }) { now }
         val last = rendered.last()
         val status = renderedStatusText(context, last)
@@ -742,8 +743,8 @@ class WidgetControllerTest {
         val projectY = work
         KeyValueWidgetSnapshotRepository(store).write(WidgetSnapshot(Selection(projectX, since), since, WidgetOutcome.Settled, null, null))
         val controller = recordingController(ForbiddenTransport(), mutableListOf()) { tappedAt }
-        val toY = controller.acceptTap(projectY, workEnqueued = true)
-        val toX = controller.acceptTap(projectX, workEnqueued = true)
+        val toY = controller.acceptTap(projectY, workEnqueued = true, workId = UUID.randomUUID())
+        val toX = controller.acceptTap(projectX, workEnqueued = true, workId = UUID.randomUUID())
         assertEquals("the first tap on the other cell selects it", SelectionRequest.Select(projectY), toY.request)
         assertEquals("the tap on the confirmed cell selects it, because the earlier pending tap projects the other cell", SelectionRequest.Select(projectX), toX.request)
     }
@@ -752,8 +753,8 @@ class WidgetControllerTest {
     fun twoTapsOnOneUnselectedCellResolveTheFirstToSelectAndTheSecondToClear() {
         KeyValueWidgetSettingsRepository(store).write(settings)
         val controller = recordingController(ForbiddenTransport(), mutableListOf()) { tappedAt }
-        val first = controller.acceptTap(meeting, workEnqueued = true)
-        val second = controller.acceptTap(meeting, workEnqueued = true)
+        val first = controller.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
+        val second = controller.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
         assertEquals("the first tap selects the unselected cell", SelectionRequest.Select(meeting), first.request)
         assertEquals("the second tap on the same cell clears it, because the first pending tap projects it selected", SelectionRequest.Clear, second.request)
     }
@@ -788,8 +789,8 @@ class WidgetControllerTest {
             KeyValueWidgetSettingsRepository(store).write(settings)
             KeyValueWidgetSnapshotRepository(store).write(WidgetSnapshot(case.confirmed, since, WidgetOutcome.Settled, null, null))
             val controller = recordingController(ForbiddenTransport(), mutableListOf()) { tappedAt }
-            case.earlierPendingTaps.forEach { controller.acceptTap(it, workEnqueued = true) }
-            val accepted = controller.acceptTap(case.tapped, workEnqueued = true)
+            case.earlierPendingTaps.forEach { controller.acceptTap(it, workEnqueued = true, workId = UUID.randomUUID()) }
+            val accepted = controller.acceptTap(case.tapped, workEnqueued = true, workId = UUID.randomUUID())
             assertEquals("case=${case.name}", case.expectedRequest, accepted.request)
         }
     }
@@ -800,14 +801,14 @@ class WidgetControllerTest {
     fun aStampedTapWhoseSettingsAreAbsentWhenItsWorkRunsStopsProjectingItsRequest() {
         KeyValueWidgetSettingsRepository(store).write(settings)
         val transport = ForbiddenTransport()
-        val accepted = recordingController(transport, mutableListOf()).acceptTap(meeting, workEnqueued = true)
+        val accepted = recordingController(transport, mutableListOf()).acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
         val input = storedTapInput(context, meeting, accepted.tappedAt, accepted.request)
         store.write(WIDGET_ENDPOINT_PREFERENCE_KEY, null)
         val result = runStoredTap(input, transport)
         assertTrue("result=$result", result is ListenableWorker.Result.Success)
         assertEquals("no network call is made without settings", 0, transport.calls)
         KeyValueWidgetSettingsRepository(store).write(settings)
-        val probe = recordingController(ForbiddenTransport(), mutableListOf()).acceptTap(meeting, workEnqueued = false)
+        val probe = recordingController(ForbiddenTransport(), mutableListOf()).acceptTap(meeting, workEnqueued = false, workId = UUID.randomUUID())
         assertEquals(SelectionRequest.Select(meeting), probe.request)
     }
 
@@ -828,7 +829,7 @@ class WidgetControllerTest {
             }
             val transport = FakeHttpTransport(ArrayDeque(listOf(respond)))
             val controller = recordingController(transport, mutableListOf()) { tappedAt }
-            val accepted = controller.acceptTap(meeting, workEnqueued = true)
+            val accepted = controller.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
             if (case.runsThroughWorker) {
                 val input = storedTapInput(context, meeting, accepted.tappedAt, accepted.request)
                 val result = runStoredTap(input, transport)
@@ -842,7 +843,7 @@ class WidgetControllerTest {
                 }
                 assertEquals("case=${case.name}", "boom", thrown?.message)
             }
-            val probe = controller.acceptTap(meeting, workEnqueued = false)
+            val probe = controller.acceptTap(meeting, workEnqueued = false, workId = UUID.randomUUID())
             assertEquals("case=${case.name}", SelectionRequest.Select(meeting), probe.request)
         }
     }
@@ -852,10 +853,10 @@ class WidgetControllerTest {
         KeyValueWidgetSettingsRepository(store).write(settings)
         val transport = FakeHttpTransport(ArrayDeque<() -> HttpResponse>(listOf({ throw IOException("unreachable") })))
         val controller = recordingController(transport, mutableListOf()) { tappedAt }
-        val accepted = controller.acceptTap(meeting, workEnqueued = true)
+        val accepted = controller.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
         val result = runStoredTap(storedTapInput(context, meeting, accepted.tappedAt, accepted.request), transport)
         assertTrue("result=$result", result is ListenableWorker.Result.Retry)
-        val probe = controller.acceptTap(meeting, workEnqueued = false)
+        val probe = controller.acceptTap(meeting, workEnqueued = false, workId = UUID.randomUUID())
         assertEquals(SelectionRequest.Clear, probe.request)
     }
 }
