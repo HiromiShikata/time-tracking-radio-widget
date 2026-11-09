@@ -17,6 +17,7 @@ data class WidgetSnapshot(
     val fetchedAt: Instant?,
     val outcome: WidgetOutcome,
     val sending: SelectionRequest?,
+    val statusRequest: SelectionRequest? = null,
 ) {
     companion object {
         val EMPTY = WidgetSnapshot(null, null, WidgetOutcome.Settled, null)

@@ -90,7 +90,7 @@ class WidgetController(
                     WidgetSelectionUpdateUseCase(
                         selections = selectionsFor(loaded),
                         snapshots = lockedSnapshots,
-                        afterSendingStarted = { sendingStarted(cell, tappedAt, request) },
+                        afterSendingStarted = { sendingStarted(cell, tappedAt) },
                     ) { clock() }.execute(request, tappedAt)
                     completed = true
                 } catch (unavailable: NetworkUnavailableException) {
@@ -146,12 +146,15 @@ class WidgetController(
 
     private fun acceptedRequest(cell: CellKey, tappedAt: Instant): SelectionRequest = synchronized(WidgetStateLock) {
         val queue = liveQueue(clock())
-        queue.getOrNull(queue.indexOfTap(cell, tappedAt))?.request
-    } ?: resolveTapRequest(snapshots.read().selection, cell)
+        val index = queue.indexOfTap(cell, tappedAt)
+        check(index >= 0) {
+            "no live queued tap for project=${cell.project}, activity=${cell.activity.code} at $tappedAt"
+        }
+        queue[index].request
+    }
 
-    private fun sendingStarted(cell: CellKey, tappedAt: Instant, request: SelectionRequest) {
-        val settled = settle { entries -> entries.withWaiting(cell, tappedAt, waiting = false) }
-        publish(settings.read(), settled.copy(sending = settled.sending ?: request))
+    private fun sendingStarted(cell: CellKey, tappedAt: Instant) {
+        publish(settings.read(), settle { entries -> entries.withWaiting(cell, tappedAt, waiting = false) })
     }
 
     private fun publishSettled(update: (List<QueuedTap>) -> List<QueuedTap> = { it }) {
@@ -162,14 +165,15 @@ class WidgetController(
         val now = clock()
         val remaining = update(liveQueue(now))
         queuedTaps.write(remaining)
-        val ring = remaining.ringEntry()
+        val head = remaining.firstOrNull()
+        val last = remaining.lastOrNull()
         val current = snapshots.read()
         val outcome = when {
-            ring?.waiting == true -> WidgetOutcome.WaitingForNetwork
+            head?.waiting == true -> WidgetOutcome.WaitingForNetwork
             current.outcome == WidgetOutcome.WaitingForNetwork -> WidgetOutcome.Settled
             else -> current.outcome
         }
-        val settled = current.copy(outcome = outcome, sending = ring?.request)
+        val settled = current.copy(outcome = outcome, sending = last?.request, statusRequest = head?.request)
         snapshots.write(settled)
         settled
     }
@@ -194,12 +198,8 @@ class WidgetController(
     }
 }
 
-private fun List<QueuedTap>.ringEntry(): QueuedTap? = firstOrNull { it.workEnqueued } ?: lastOrNull()
-
-private fun List<QueuedTap>.indexOfTap(cell: CellKey, tappedAt: Instant): Int {
-    val exact = indexOfFirst { it.cell == cell && it.acceptedAt == tappedAt }
-    return if (exact >= 0) exact else indexOfFirst { it.cell == cell }
-}
+private fun List<QueuedTap>.indexOfTap(cell: CellKey, tappedAt: Instant): Int =
+    indexOfFirst { it.cell == cell && it.acceptedAt == tappedAt }
 
 private fun List<QueuedTap>.withoutFirst(cell: CellKey): List<QueuedTap> {
     val index = indexOfFirst { it.cell == cell }

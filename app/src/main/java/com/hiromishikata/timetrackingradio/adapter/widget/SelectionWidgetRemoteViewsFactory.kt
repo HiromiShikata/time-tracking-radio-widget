@@ -27,7 +27,7 @@ class SelectionWidgetRemoteViewsFactory(private val context: Context) {
         }
         val status = resolveWidgetStatus(
             selection = snapshot.selection,
-            sending = snapshot.sending,
+            sending = snapshot.statusRequest ?: snapshot.sending,
             outcome = snapshot.outcome,
             asOf = snapshot.fetchedAt ?: now,
         )
