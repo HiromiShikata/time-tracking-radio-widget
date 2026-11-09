@@ -395,6 +395,40 @@ class WidgetSelectionWorkerTest {
         assertEquals(SelectionRequest.Select(legacyCell), rendered.last().sending)
     }
 
+    @Test
+    fun anIOExceptionFromTheTransportDuringALegacyTapRequestRequestsARetryAndKeepsItsRing() {
+        resetWidgetState()
+        widgetSnapshots(context).write(
+            WidgetSnapshot(Selection(CellKey("project-b", ActivityKind.MEETING), since), since, WidgetOutcome.Settled, null, null),
+        )
+        rendered.clear()
+        transport = EchoSelectionTransport { throw IOException("unexpected end of stream") }
+        val result = runWorker(legacyTapInput())
+        assertTrue("result=$result", result is ListenableWorker.Result.Retry)
+        assertEquals(SelectionRequest.Select(legacyCell), widgetSnapshots(context).read().sending)
+        assertEquals(SelectionRequest.Select(legacyCell), rendered.last().sending)
+    }
+
+    @Test
+    fun aFinalTransportFailureOfALegacyTapIsNotRetriedAndShowsUnreachableWithNoRing() {
+        resetWidgetState()
+        widgetSnapshots(context).write(
+            WidgetSnapshot(Selection(CellKey("project-b", ActivityKind.MEETING), since), since, WidgetOutcome.Settled, null, null),
+        )
+        rendered.clear()
+        transport = EchoSelectionTransport { throw ProtocolException("bad") }
+        val result = runWorker(legacyTapInput())
+        assertTrue("result=$result", result is ListenableWorker.Result.Success)
+        assertEquals(1, transport.requests.count { it.method == "POST" })
+        val stored = widgetSnapshots(context).read()
+        assertEquals(WidgetOutcome.Unreachable, stored.outcome)
+        assertNull(stored.sending)
+        assertNull(rendered.last().sending)
+        assertFalse("the legacy tap's cell still draws the sending ring", renderedCellDrawableResId(context, rendered.last(), legacyCell) == R.drawable.cell_sending)
+        val status = renderedStatusText(context, rendered.last())
+        assertFalse("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
+    }
+
     private data class FinalFailureCase(val name: String, val failure: IOException)
 
     @Test

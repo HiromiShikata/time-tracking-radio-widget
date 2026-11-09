@@ -9,6 +9,7 @@ import com.hiromishikata.timetrackingradio.domain.SelectionRequest
 import com.hiromishikata.timetrackingradio.domain.SelectionResponse
 import com.hiromishikata.timetrackingradio.domain.WidgetOutcome
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
+import com.hiromishikata.timetrackingradio.domain.resolveTapRequest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -91,7 +92,8 @@ class WidgetSelectionUpdateUseCaseTest {
         cases.forEach { case ->
             val selections = FakeSelectionRepository(onUpdate = case.response)
             val snapshots = FakeWidgetSnapshotRepository(case.before)
-            val after = WidgetSelectionUpdateUseCase(selections, snapshots) { now }.execute(case.tapped, tappedAt)
+            val request = resolveTapRequest(case.before.selection, case.tapped)
+            val after = WidgetSelectionUpdateUseCase(selections, snapshots) { now }.execute(request, tappedAt)
             assertEquals(case.name, listOf(case.expectedRequest), selections.updates)
             assertEquals(case.name, case.expectedRequest, snapshots.writes.first().sending)
             assertEquals(case.name, case.expectedAfter, after)
@@ -103,7 +105,7 @@ class WidgetSelectionUpdateUseCaseTest {
     fun anyUnexpectedFailureClearsTheSendingStateAndIsRethrown() {
         val selections = FakeSelectionRepository(onUpdate = { throw IllegalStateException("unexpected") })
         val snapshots = FakeWidgetSnapshotRepository(workSelected)
-        val thrown = runCatching { WidgetSelectionUpdateUseCase(selections, snapshots) { now }.execute(meeting, tappedAt) }
+        val thrown = runCatching { WidgetSelectionUpdateUseCase(selections, snapshots) { now }.execute(SelectionRequest.Select(meeting), tappedAt) }
             .exceptionOrNull()
         assertTrue("thrown=$thrown", thrown is IllegalStateException)
         assertEquals(workSelected, snapshots.read())
