@@ -568,7 +568,7 @@ class WidgetControllerTest {
     }
 
     @Test
-    fun theEarliestPendingTapOwnsTheRingWhileBothTapsWait() {
+    fun theLastPendingTapOwnsTheRingWhileTheEarliestTapHeadsTheStatus() {
         KeyValueWidgetSettingsRepository(store).write(settings)
         val rendered = mutableListOf<WidgetSnapshot>()
         val controller = recordingController(ForbiddenTransport(), rendered) { tappedAt }
@@ -576,7 +576,7 @@ class WidgetControllerTest {
         controller.acceptTap(work, workEnqueued = true)
         val snapshot = rendered.last()
         val status = renderedStatusText(context, snapshot)
-        assertEquals(SelectionRequest.Select(meeting), snapshot.sending)
+        assertEquals(SelectionRequest.Select(work), snapshot.sending)
         assertTrue("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
     }
 
