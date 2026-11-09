@@ -8,6 +8,10 @@ interface SelectionRepository {
     fun update(request: SelectionRequest, tappedAt: Instant): SelectionResponse
 }
 
+interface UnstampedSelectionRepository {
+    fun updateUnstamped(request: SelectionRequest): SelectionResponse
+}
+
 interface WidgetSnapshotRepository {
     fun read(): WidgetSnapshot
 

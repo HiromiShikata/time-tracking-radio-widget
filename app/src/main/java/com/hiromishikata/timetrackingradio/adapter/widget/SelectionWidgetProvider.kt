@@ -28,8 +28,10 @@ class SelectionWidgetProvider : AppWidgetProvider() {
             return
         }
         val cell = CellKey(project, activity)
-        val tappedAt = controllerFactory(context).acceptTap(cell, workEnqueued = true)
-        WidgetWorkScheduler.enqueueTap(context, cell, tappedAt)
+        val controller = controllerFactory(context)
+        val request = controller.tapRequestFor(cell)
+        val tappedAt = controller.acceptTap(cell, workEnqueued = true)
+        WidgetWorkScheduler.enqueueTap(context, cell, tappedAt, request)
     }
 
     companion object {

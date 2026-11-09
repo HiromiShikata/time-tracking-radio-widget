@@ -15,6 +15,7 @@ class KeyValueWidgetSnapshotRepository(private val store: KeyValueStore) : Widge
         fetchedAt = store.read(FETCHED_AT_KEY)?.let(Instant::parse),
         outcome = readOutcome(),
         sending = readSending(),
+        statusRequest = null,
     )
 
     override fun write(snapshot: WidgetSnapshot) {

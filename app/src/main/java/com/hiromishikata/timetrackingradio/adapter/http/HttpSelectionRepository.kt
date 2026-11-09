@@ -9,30 +9,38 @@ import com.hiromishikata.timetrackingradio.domain.NoDiagnostics
 import com.hiromishikata.timetrackingradio.domain.SelectionRepository
 import com.hiromishikata.timetrackingradio.domain.SelectionRequest
 import com.hiromishikata.timetrackingradio.domain.SelectionResponse
+import com.hiromishikata.timetrackingradio.domain.UnstampedSelectionRepository
 import com.hiromishikata.timetrackingradio.domain.describeFailure
 import com.hiromishikata.timetrackingradio.domain.encodeSelectionRequest
+import com.hiromishikata.timetrackingradio.domain.encodeUnstampedSelectionRequest
 import com.hiromishikata.timetrackingradio.domain.parseSelectionResponse
 import com.hiromishikata.timetrackingradio.domain.redactUrlQueries
 import java.io.IOException
+import java.net.MalformedURLException
+import java.net.ProtocolException
+import java.net.UnknownServiceException
 import java.time.Instant
 
 class HttpSelectionRepository(
     private val endpointUrl: String,
     private val transport: HttpTransport,
     private val diagnostics: DiagnosticSink = NoDiagnostics,
-) : SelectionRepository {
+) : SelectionRepository, UnstampedSelectionRepository {
     override fun read(): SelectionResponse =
         communicate { transport.send(HttpRequest("GET", endpointUrl, null)) }
 
     override fun update(request: SelectionRequest, tappedAt: Instant): SelectionResponse =
         communicate { transport.send(HttpRequest("POST", endpointUrl, encodeSelectionRequest(request, tappedAt))) }
 
+    override fun updateUnstamped(request: SelectionRequest): SelectionResponse =
+        communicate { transport.send(HttpRequest("POST", endpointUrl, encodeUnstampedSelectionRequest(request))) }
+
     private fun communicate(send: () -> HttpResponse): SelectionResponse {
         val body = try {
             followRedirects(transport, endpointUrl, send())
         } catch (failure: IOException) {
             diagnostics.record(DiagnosticEventType.EXCEPTION, describeFailure(failure))
-            throw NetworkUnavailableException(failure)
+            throw transportFailure(failure)
         } catch (failure: CommunicationFailedException) {
             diagnostics.record(DiagnosticEventType.EXCEPTION, describeFailure(failure))
             throw failure
@@ -44,6 +52,13 @@ class HttpSelectionRepository(
             throw CommunicationFailedException("endpoint returned an unexpected response", failure)
         }
     }
+
+    private fun transportFailure(failure: IOException): CommunicationFailedException =
+        if (failure is MalformedURLException || failure is UnknownServiceException || failure is ProtocolException) {
+            CommunicationFailedException("request to the endpoint failed", failure)
+        } else {
+            NetworkUnavailableException(failure)
+        }
 
     private fun recordOutcome(response: SelectionResponse) {
         when (response) {

@@ -5,6 +5,8 @@ import com.hiromishikata.timetrackingradio.domain.CommunicationFailedException
 import com.hiromishikata.timetrackingradio.domain.NetworkUnavailableException
 import com.hiromishikata.timetrackingradio.domain.SelectionRepository
 import com.hiromishikata.timetrackingradio.domain.SelectionRequest
+import com.hiromishikata.timetrackingradio.domain.SelectionResponse
+import com.hiromishikata.timetrackingradio.domain.UnstampedSelectionRepository
 import com.hiromishikata.timetrackingradio.domain.WidgetOutcome
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshotRepository
@@ -22,13 +24,21 @@ class WidgetSelectionUpdateUseCase(
     fun execute(tapped: CellKey, tappedAt: Instant): WidgetSnapshot =
         execute(resolveTapRequest(snapshots.read().selection, tapped), tappedAt)
 
-    fun execute(request: SelectionRequest, tappedAt: Instant): WidgetSnapshot {
+    fun execute(request: SelectionRequest, tappedAt: Instant): WidgetSnapshot =
+        send(request) { selections.update(request, tappedAt) }
+
+    fun executeUnstamped(tapped: CellKey, unstamped: UnstampedSelectionRepository): WidgetSnapshot {
+        val request = resolveTapRequest(snapshots.read().selection, tapped)
+        return send(request) { unstamped.updateUnstamped(request) }
+    }
+
+    private fun send(request: SelectionRequest, post: () -> SelectionResponse): WidgetSnapshot {
         val previous = snapshots.read()
         val sending = previous.copy(sending = request)
         snapshots.write(sending)
         val finished = try {
             afterSendingStarted()
-            applySelectionResponse(selections.update(request, tappedAt), sending, clock()).copy(sending = null)
+            applySelectionResponse(post(), sending, clock()).copy(sending = null)
         } catch (failure: NetworkUnavailableException) {
             snapshots.write(sending.copy(outcome = WidgetOutcome.WaitingForNetwork))
             throw failure
