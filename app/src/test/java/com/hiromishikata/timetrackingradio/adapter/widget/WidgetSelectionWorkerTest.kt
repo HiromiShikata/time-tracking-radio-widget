@@ -58,12 +58,6 @@ class WidgetSelectionWorkerTest {
 
     private data class RunCase(val name: String, val input: Data, val expectedMethods: List<String>)
 
-    private val tapInput = workDataOf(
-        WidgetSelectionWorker.KEY_PROJECT to "project-a",
-        WidgetSelectionWorker.KEY_ACTIVITY to "meeting",
-        WidgetSelectionWorker.KEY_TAPPED_AT to TEST_TAPPED_AT_TEXT,
-    )
-
     @Before
     fun setUp() {
         installWorkManagerForTests(context)
@@ -81,8 +75,21 @@ class WidgetSelectionWorkerTest {
     private fun runWorker(input: Data): ListenableWorker.Result =
         TestListenableWorkerBuilder<WidgetSelectionWorker>(context).setInputData(input).build().startWork().get()
 
+    private fun tapInputAt(tappedAt: Instant): Data = workDataOf(
+        WidgetSelectionWorker.KEY_PROJECT to "project-a",
+        WidgetSelectionWorker.KEY_ACTIVITY to "meeting",
+        WidgetSelectionWorker.KEY_TAPPED_AT to tappedAt.toString(),
+    )
+
+    private fun acceptedTapInput(): Data {
+        val tappedAt = WidgetSelectionWorker.controllerFactory(context).acceptTap(meeting, workEnqueued = true)
+        rendered.clear()
+        return tapInputAt(tappedAt)
+    }
+
     @Test
     fun eachInputRunsItsSelectionCallAndRendersTheResult() {
+        val tapInput = acceptedTapInput()
         val cases = listOf(
             RunCase("a tap sends one selection post", tapInput, listOf("POST")),
             RunCase("a refresh only reads the selection", Data.EMPTY, listOf("GET")),
@@ -101,20 +108,20 @@ class WidgetSelectionWorkerTest {
 
     @Test
     fun aTapStoresTheSelectionTheServerReturns() {
-        runWorker(tapInput)
+        runWorker(acceptedTapInput())
         assertEquals(Selection(meeting, since), widgetSnapshots(context).read().selection)
     }
 
     @Test
     fun aSucceededTapEnqueuesTheDiagnosticsUploadUnderItsOwnName() {
-        runWorker(tapInput)
+        runWorker(acceptedTapInput())
         assertEquals(1, uniqueWorkInfos(context, WidgetDiagnosticsUploadWorker.UNIQUE_WORK_NAME).size)
     }
 
     @Test
     fun aFailedTapStillEnqueuesTheDiagnosticsUpload() {
         transport = EchoSelectionTransport { throw IllegalStateException("unexpected") }
-        runWorker(tapInput)
+        runWorker(acceptedTapInput())
         assertTrue(
             "no diagnostics upload was enqueued after the failed tap",
             uniqueWorkInfos(context, WidgetDiagnosticsUploadWorker.UNIQUE_WORK_NAME).isNotEmpty(),
@@ -129,7 +136,7 @@ class WidgetSelectionWorkerTest {
             started.countDown()
             release.await(10, TimeUnit.SECONDS)
         }
-        val worker = TestListenableWorkerBuilder<WidgetSelectionWorker>(context).setInputData(tapInput).build()
+        val worker = TestListenableWorkerBuilder<WidgetSelectionWorker>(context).setInputData(acceptedTapInput()).build()
         val outcome = worker.startWork()
         try {
             assertTrue("the selection request started", started.await(5, TimeUnit.SECONDS))
@@ -151,11 +158,24 @@ class WidgetSelectionWorkerTest {
     @Test
     fun anUnexpectedFailureOfTheSelectionCallClearsTheSendingStateAndSucceedsSoChainedWorkStillRuns() {
         transport = EchoSelectionTransport { throw IllegalStateException("unexpected") }
-        val result = runWorker(tapInput)
+        val result = runWorker(acceptedTapInput())
         assertTrue("result=$result", result is ListenableWorker.Result.Success)
         assertTrue("the sending state was rendered first", rendered.any { it.sending != null })
         assertNull(widgetSnapshots(context).read().sending)
         assertNull("the last rendered screen still shows a sending cell", rendered.last().sending)
+    }
+
+    @Test
+    fun aTerminalNonNetworkFailureDiscardsTheTapsEntryAndSucceeds() {
+        transport = EchoSelectionTransport { throw IllegalStateException("boom") }
+        val result = runWorker(acceptedTapInput())
+        assertTrue("result=$result", result is ListenableWorker.Result.Success)
+        val last = rendered.last()
+        val status = renderedStatusText(context, last)
+        assertNull("the stored snapshot still holds the tap's ring", widgetSnapshots(context).read().sending)
+        assertNull("the last rendered screen still shows the tap's ring", last.sending)
+        assertFalse("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
+        assertFalse("the tapped cell still draws the sending ring", renderedCellDrawableResId(context, last, meeting) == R.drawable.cell_sending)
     }
 
     private data class PostBodyCase(
@@ -174,7 +194,7 @@ class WidgetSelectionWorkerTest {
         cases.forEach { case ->
             widgetSnapshots(context).write(WidgetSnapshot(case.previous, since, WidgetOutcome.Settled, null))
             transport = EchoSelectionTransport()
-            val result = runWorker(tapInput)
+            val result = runWorker(acceptedTapInput())
             assertTrue("case=${case.name} result=$result", result is ListenableWorker.Result.Success)
             val body = postedBodyOf(transport.requests.single { it.method == "POST" })
             assertEquals("case=${case.name}", case.expectedProject, body.getValue("project").jsonPrimitive.contentOrNull)
@@ -194,7 +214,7 @@ class WidgetSelectionWorkerTest {
         WidgetSelectionWorker.controllerFactory = {
             WidgetController(it, { ngTransport }, { EchoSelectionTransport() }, publish = { _, snapshot -> rendered += snapshot })
         }
-        val result = runWorker(tapInput)
+        val result = runWorker(acceptedTapInput())
         assertTrue("result=$result", result is ListenableWorker.Result.Success)
         assertEquals(1, posts.count { it.method == "POST" })
         val stored = widgetSnapshots(context).read()
@@ -216,8 +236,9 @@ class WidgetSelectionWorkerTest {
             FailureCase("unexpected failure", IllegalStateException("unexpected"), ListenableWorker.Result.Success::class.java),
         )
         cases.forEach { case ->
+            resetWidgetState()
             transport = EchoSelectionTransport { throw case.failure }
-            val result = runWorker(tapInput)
+            val result = runWorker(acceptedTapInput())
             assertEquals("case=${case.name} result=$result", case.expectedResult, result.javaClass)
         }
     }
@@ -225,7 +246,7 @@ class WidgetSelectionWorkerTest {
     @Test
     fun aTapWhoseNetworkAttemptFailsReturnsToTheWaitingStatusWithItsRingUntilTheNextAttempt() {
         transport = EchoSelectionTransport { throw UnknownHostException("unreachable.example") }
-        val result = runWorker(tapInput)
+        val result = runWorker(acceptedTapInput())
         assertTrue("result=$result", result is ListenableWorker.Result.Retry)
         val waiting = rendered.last()
         assertEquals("the ring stays on the waiting cell", SelectionRequest.Select(meeting), waiting.sending)
@@ -238,7 +259,7 @@ class WidgetSelectionWorkerTest {
     fun aStoppedWorkClearsTheSendingState() {
         KeyValueWidgetSettingsRepository(widgetPreferences(context)).write(WIDGET_TEST_SETTINGS)
         widgetSnapshots(context).write(WidgetSnapshot(Selection(meeting, since), since, WidgetOutcome.Settled, SelectionRequest.Select(meeting)))
-        val worker = TestListenableWorkerBuilder<WidgetSelectionWorker>(context).setInputData(tapInput).build()
+        val worker = TestListenableWorkerBuilder<WidgetSelectionWorker>(context).setInputData(tapInputAt(TEST_TAPPED_AT)).build()
         worker.onStopped()
         assertNull(widgetSnapshots(context).read().sending)
         assertNull(rendered.last().sending)
@@ -266,7 +287,7 @@ class WidgetSelectionWorkerTest {
             WidgetSelectionWorker.controllerFactory = {
                 WidgetController(it, { failing }, { EchoSelectionTransport() }, publish = { _, snapshot -> rendered += snapshot })
             }
-            val result = runWorker(tapInput)
+            val result = runWorker(acceptedTapInput())
             assertTrue("case=${case.name} result=$result", result is ListenableWorker.Result.Retry)
             assertEquals("case=${case.name}", SelectionRequest.Select(meeting), widgetSnapshots(context).read().sending)
             assertEquals("case=${case.name}", SelectionRequest.Select(meeting), rendered.last().sending)
@@ -286,7 +307,7 @@ class WidgetSelectionWorkerTest {
         WidgetSelectionWorker.controllerFactory = {
             WidgetController(it, { notJson }, { EchoSelectionTransport() }, publish = { _, snapshot -> rendered += snapshot })
         }
-        val result = runWorker(tapInput)
+        val result = runWorker(acceptedTapInput())
         assertFalse("result=$result", result is ListenableWorker.Result.Retry)
         assertEquals(1, posts.count { it.method == "POST" })
     }
@@ -294,11 +315,11 @@ class WidgetSelectionWorkerTest {
     @Test
     fun aStoppedWorkDoesNotClearATapThatIsStillPending() {
         resetWidgetState()
-        WidgetSelectionWorker.controllerFactory(context).acceptTap(meeting, workEnqueued = true)
+        val input = acceptedTapInput()
         val heldWork = WidgetScope.mutex
         runBlocking { heldWork.lock() }
         try {
-            val worker = TestListenableWorkerBuilder<WidgetSelectionWorker>(context).setInputData(tapInput).build()
+            val worker = TestListenableWorkerBuilder<WidgetSelectionWorker>(context).setInputData(input).build()
             val outcome = worker.startWork()
             worker.onStopped()
             awaitFinished(outcome)
@@ -320,11 +341,11 @@ class WidgetSelectionWorkerTest {
         WidgetSelectionWorker.controllerFactory = {
             WidgetController(it, { flaky }, { EchoSelectionTransport() }, publish = { _, snapshot -> rendered += snapshot }, clock = { TEST_TAPPED_AT })
         }
-        WidgetSelectionWorker.controllerFactory(context).acceptTap(meeting, workEnqueued = true)
-        val first = runWorker(tapInput)
+        val input = acceptedTapInput()
+        val first = runWorker(input)
         assertTrue("first=$first", first is ListenableWorker.Result.Retry)
         widgetSnapshots(context).write(WidgetSnapshot(Selection(meeting, since), since, WidgetOutcome.Settled, null))
-        val second = runWorker(tapInput)
+        val second = runWorker(input)
         assertTrue("second=$second", second is ListenableWorker.Result.Success)
         assertEquals(listOf(SELECT_MEETING_BODY, SELECT_MEETING_BODY), flaky.postBodies)
     }
