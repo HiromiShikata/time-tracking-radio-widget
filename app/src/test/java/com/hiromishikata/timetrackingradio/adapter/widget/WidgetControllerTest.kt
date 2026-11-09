@@ -36,6 +36,7 @@ import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 
 @RunWith(RobolectricTestRunner::class)
@@ -426,5 +427,130 @@ class WidgetControllerTest {
         assertEquals(SelectionRequest.Select(meeting), KeyValueWidgetSnapshotRepository(store).read().sending)
         controller.clearSending(meeting)
         assertNull(KeyValueWidgetSnapshotRepository(store).read().sending)
+    }
+
+    private data class PendingCeilingCase(
+        val name: String,
+        val minutesAfterAcceptance: Long,
+        val expectedSending: SelectionRequest?,
+        val expectedWaiting: Boolean,
+    )
+
+    private data class UnenqueuedAgeCase(val name: String, val secondsAfterAcceptance: Long, val expectedSending: SelectionRequest?)
+
+    private fun awaitLastRendered(rendered: List<WidgetSnapshot>, condition: (WidgetSnapshot) -> Boolean): WidgetSnapshot {
+        val deadline = System.currentTimeMillis() + 5_000
+        while (!condition(rendered.last()) && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10)
+        }
+        return rendered.last()
+    }
+
+    @Test
+    fun aTapAcceptedWithWorkEnqueuedShowsTheWaitingStatusAndKeepsItsRing() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val rendered = mutableListOf<WidgetSnapshot>()
+        val transport = ForbiddenTransport()
+        recordingController(transport, rendered).acceptTap(work, workEnqueued = true)
+        val snapshot = rendered.last()
+        val status = renderedStatusText(context, snapshot)
+        assertEquals(SelectionRequest.Select(work), snapshot.sending)
+        assertEquals(SelectionRequest.Select(work), KeyValueWidgetSnapshotRepository(store).read().sending)
+        assertTrue("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
+        assertEquals(0, transport.calls)
+    }
+
+    @Test
+    fun theWaitingStatusGivesWayToTheSwitchingStatusWhenTheTapsPostStartsAndTheRingStays() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val transport = GatedSelectionTransport(selectedMeetingBody)
+        val rendered = CopyOnWriteArrayList<WidgetSnapshot>()
+        recordingController(transport, rendered).acceptTap(work, workEnqueued = true)
+        assertTrue("waiting before the POST starts", WAITING_FOR_NETWORK_TEXT.containsMatchIn(renderedStatusText(context, rendered.last())))
+        val first = thread { runBlocking { recordingController(transport, rendered).performTap(work, tappedAt) } }
+        try {
+            assertTrue("the POST started", transport.selectionStarted.await(5, TimeUnit.SECONDS))
+            val sending = awaitLastRendered(rendered) { !WAITING_FOR_NETWORK_TEXT.containsMatchIn(renderedStatusText(context, it)) }
+            val status = renderedStatusText(context, sending)
+            assertFalse("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
+            assertTrue("status=$status", status.startsWith("Switching"))
+            assertEquals(SelectionRequest.Select(work), sending.sending)
+        } finally {
+            transport.releaseSelection.countDown()
+            first.join(5_000)
+        }
+    }
+
+    @Test
+    fun aSendingTapKeepsItsRingPastTheTenMinuteAgeBoundWhileItsWorkRuns() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val transport = GatedSelectionTransport(clearedBody)
+        val clock = AtomicReference(acceptedAt)
+        val rendered = CopyOnWriteArrayList<WidgetSnapshot>()
+        recordingController(transport, rendered) { clock.get() }.acceptTap(work, workEnqueued = true)
+        val first = thread { runBlocking { recordingController(transport, rendered) { clock.get() }.performTap(work, tappedAt) } }
+        try {
+            assertTrue("the POST started", transport.selectionStarted.await(5, TimeUnit.SECONDS))
+            clock.set(acceptedAt.plusSeconds(11 * 60))
+            recordingController(transport, rendered) { clock.get() }.render()
+            assertEquals("the sending tap still holds its ring", SelectionRequest.Select(work), rendered.last().sending)
+        } finally {
+            transport.releaseSelection.countDown()
+            first.join(5_000)
+        }
+    }
+
+    @Test
+    fun aPendingTapKeepsItsRingAndWaitingStatusUntilTheSixtyMinuteCeiling() {
+        val cases = listOf(
+            PendingCeilingCase(
+                "fifty-nine minutes after acceptance with the work still enqueued keeps the ring and the waiting status",
+                59,
+                SelectionRequest.Select(work),
+                true,
+            ),
+            PendingCeilingCase(
+                "sixty-one minutes after acceptance with the work still enqueued drops the ring and the waiting status",
+                61,
+                null,
+                false,
+            ),
+        )
+        cases.forEach { case ->
+            context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE).edit().clear().commit()
+            KeyValueWidgetSettingsRepository(store).write(settings)
+            val clock = AtomicReference(acceptedAt)
+            val rendered = mutableListOf<WidgetSnapshot>()
+            val transport = ForbiddenTransport()
+            val controller = recordingController(transport, rendered) { clock.get() }
+            controller.acceptTap(work, workEnqueued = true)
+            clock.set(acceptedAt.plusSeconds(case.minutesAfterAcceptance * 60))
+            controller.render()
+            val status = renderedStatusText(context, rendered.last())
+            assertEquals("case=${case.name}", case.expectedSending, rendered.last().sending)
+            assertEquals("case=${case.name} status=$status", case.expectedWaiting, WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
+            assertEquals("case=${case.name}", 0, transport.calls)
+        }
+    }
+
+    @Test
+    fun aTapThatWasNeverEnqueuedLosesItsRingJustAfterTheTenMinuteAgeBound() {
+        val cases = listOf(
+            UnenqueuedAgeCase("nine minutes fifty-nine seconds after acceptance, within the age bound, the ring is shown", 599, SelectionRequest.Select(work)),
+            UnenqueuedAgeCase("ten minutes one second after acceptance, beyond the age bound, no ring is derived", 601, null),
+        )
+        cases.forEach { case ->
+            context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE).edit().clear().commit()
+            KeyValueWidgetSettingsRepository(store).write(settings)
+            val clock = AtomicReference(acceptedAt)
+            val rendered = mutableListOf<WidgetSnapshot>()
+            val transport = ForbiddenTransport()
+            val controller = recordingController(transport, rendered) { clock.get() }
+            controller.acceptTap(work, workEnqueued = false)
+            clock.set(acceptedAt.plusSeconds(case.secondsAfterAcceptance))
+            controller.render()
+            assertEquals("case=${case.name}", case.expectedSending, rendered.last().sending)
+            assertEquals("case=${case.name}", 0, transport.calls)
+        }
     }
 }

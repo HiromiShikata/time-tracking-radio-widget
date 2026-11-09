@@ -5,6 +5,7 @@ import androidx.work.Data
 import androidx.work.ListenableWorker
 import androidx.work.testing.TestListenableWorkerBuilder
 import androidx.work.workDataOf
+import com.hiromishikata.timetrackingradio.R
 import com.hiromishikata.timetrackingradio.TestApplication
 import com.hiromishikata.timetrackingradio.adapter.http.HttpRequest
 import com.hiromishikata.timetrackingradio.adapter.http.HttpResponse
@@ -211,6 +212,18 @@ class WidgetSelectionWorkerTest {
             val result = runWorker(tapInput)
             assertEquals("case=${case.name} result=$result", case.expectedResult, result.javaClass)
         }
+    }
+
+    @Test
+    fun aTapWhoseNetworkAttemptFailsReturnsToTheWaitingStatusWithItsRingUntilTheNextAttempt() {
+        transport = EchoSelectionTransport { throw UnknownHostException("unreachable.example") }
+        val result = runWorker(tapInput)
+        assertTrue("result=$result", result is ListenableWorker.Result.Retry)
+        val waiting = rendered.last()
+        assertEquals("the ring stays on the waiting cell", SelectionRequest.Select(meeting), waiting.sending)
+        assertEquals(R.drawable.cell_sending, renderedCellDrawableResId(context, waiting, meeting))
+        val status = renderedStatusText(context, waiting)
+        assertTrue("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
     }
 
     @Test
