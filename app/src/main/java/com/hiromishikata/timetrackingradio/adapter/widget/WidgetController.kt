@@ -21,7 +21,6 @@ import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
 import com.hiromishikata.timetrackingradio.domain.DiagnosticRecorder
 import com.hiromishikata.timetrackingradio.domain.NetworkUnavailableException
 import com.hiromishikata.timetrackingradio.domain.SelectionRepository
-import com.hiromishikata.timetrackingradio.domain.Selection
 import com.hiromishikata.timetrackingradio.domain.SelectionRequest
 import com.hiromishikata.timetrackingradio.domain.WidgetOutcome
 import com.hiromishikata.timetrackingradio.domain.WidgetSettings
@@ -37,7 +36,7 @@ import java.time.Instant
 
 private val SENDING_STATE_MAX_AGE: Duration = Duration.ofMinutes(10)
 
-private val PENDING_TAP_MAX_AGE: Duration = Duration.ofMinutes(60)
+private val PENDING_TAP_MAX_AGE: Duration = Duration.ofHours(24)
 
 class WidgetController(
     private val context: Context,
@@ -60,7 +59,7 @@ class WidgetController(
     private val diagnosticLog = KeyValueDiagnosticLogRepository(store)
 
     fun render() {
-        publish(settings.read(), settle(removing = null))
+        publishSettled()
     }
 
     fun acceptTap(cell: CellKey, workEnqueued: Boolean): Instant {
@@ -72,7 +71,8 @@ class WidgetController(
         )
         if (loaded != null) {
             synchronized(WidgetStateLock) {
-                queuedTaps.write(liveQueue(tappedAt) + QueuedTap(cell, tappedAt, workEnqueued, waiting = workEnqueued))
+                val request = resolveTapRequest(snapshots.read().selection, cell)
+                queuedTaps.write(liveQueue(tappedAt) + QueuedTap(cell, tappedAt, request, workEnqueued, waiting = workEnqueued))
             }
             render()
         }
@@ -83,21 +83,26 @@ class WidgetController(
         WidgetScope.mutex.withLock {
             val loaded = settings.read()
             if (loaded != null) {
+                val request = acceptedRequest(cell, tappedAt)
                 var completed = false
                 var awaitingNetwork = false
                 try {
                     WidgetSelectionUpdateUseCase(
                         selections = selectionsFor(loaded),
                         snapshots = lockedSnapshots,
-                        afterSendingStarted = { sendingStarted(cell) },
-                    ) { clock() }.execute(cell, tappedAt)
+                        afterSendingStarted = { sendingStarted(cell, tappedAt, request) },
+                    ) { clock() }.execute(request, tappedAt)
                     completed = true
                 } catch (unavailable: NetworkUnavailableException) {
                     awaitingNetwork = true
                     throw unavailable
                 } finally {
-                    publishSettled(removing = if (completed) cell else null) { entries ->
-                        if (awaitingNetwork) entries.withPendingWork(cell, tappedAt) else entries
+                    publishSettled { entries ->
+                        when {
+                            awaitingNetwork -> entries.withPendingWork(cell, tappedAt, request)
+                            completed -> entries.withoutTap(cell, tappedAt)
+                            else -> entries
+                        }
                     }
                 }
             }
@@ -112,14 +117,22 @@ class WidgetController(
                 try {
                     WidgetSnapshotReadUseCase(selectionsFor(loaded), lockedSnapshots) { clock() }.execute()
                 } finally {
-                    publishSettled(removing = null)
+                    publishSettled()
                 }
             }
         }
     }
 
     fun clearSending(cell: CellKey?) {
-        publishSettled(removing = cell)
+        publishSettled { entries -> cell?.let { entries.withoutFirst(it) } ?: entries }
+    }
+
+    fun discardTap(cell: CellKey, tappedAt: Instant) {
+        publishSettled { entries -> entries.withoutTap(cell, tappedAt) }
+    }
+
+    fun markWaiting(cell: CellKey, tappedAt: Instant) {
+        publishSettled { entries -> entries.withWaiting(cell, tappedAt, waiting = true) }
     }
 
     fun uploadDiagnostics() {
@@ -131,30 +144,32 @@ class WidgetController(
         ).execute()
     }
 
-    private fun sendingStarted(cell: CellKey) {
-        val settled = settle(removing = null) { entries -> entries.withWaiting(cell, false) }
-        publish(settings.read(), settled.copy(sending = settled.sending ?: resolveTapRequest(settled.selection, cell)))
+    private fun acceptedRequest(cell: CellKey, tappedAt: Instant): SelectionRequest = synchronized(WidgetStateLock) {
+        val queue = liveQueue(clock())
+        queue.getOrNull(queue.indexOfTap(cell, tappedAt))?.request
+    } ?: resolveTapRequest(snapshots.read().selection, cell)
+
+    private fun sendingStarted(cell: CellKey, tappedAt: Instant, request: SelectionRequest) {
+        val settled = settle { entries -> entries.withWaiting(cell, tappedAt, waiting = false) }
+        publish(settings.read(), settled.copy(sending = settled.sending ?: request))
     }
 
-    private fun publishSettled(removing: CellKey?, update: (List<QueuedTap>) -> List<QueuedTap> = { it }) {
-        publish(settings.read(), settle(removing, update))
+    private fun publishSettled(update: (List<QueuedTap>) -> List<QueuedTap> = { it }) {
+        publish(settings.read(), settle(update))
     }
 
-    private fun settle(
-        removing: CellKey?,
-        update: (List<QueuedTap>) -> List<QueuedTap> = { it },
-    ): WidgetSnapshot = synchronized(WidgetStateLock) {
+    private fun settle(update: (List<QueuedTap>) -> List<QueuedTap> = { it }): WidgetSnapshot = synchronized(WidgetStateLock) {
         val now = clock()
-        val live = update(liveQueue(now))
-        val remaining = if (removing == null) live else live.withoutFirst(removing)
+        val remaining = update(liveQueue(now))
         queuedTaps.write(remaining)
+        val ring = remaining.ringEntry()
         val current = snapshots.read()
         val outcome = when {
-            remaining.any { it.waiting } -> WidgetOutcome.WaitingForNetwork
+            ring?.waiting == true -> WidgetOutcome.WaitingForNetwork
             current.outcome == WidgetOutcome.WaitingForNetwork -> WidgetOutcome.Settled
             else -> current.outcome
         }
-        val settled = current.copy(outcome = outcome, sending = sendingRing(remaining, current.selection))
+        val settled = current.copy(outcome = outcome, sending = ring?.request)
         snapshots.write(settled)
         settled
     }
@@ -179,25 +194,34 @@ class WidgetController(
     }
 }
 
-private fun sendingRing(queue: List<QueuedTap>, selection: Selection?): SelectionRequest? =
-    queue.lastOrNull()?.let { resolveTapRequest(selection, it.cell) }
+private fun List<QueuedTap>.ringEntry(): QueuedTap? = firstOrNull { it.workEnqueued } ?: lastOrNull()
+
+private fun List<QueuedTap>.indexOfTap(cell: CellKey, tappedAt: Instant): Int {
+    val exact = indexOfFirst { it.cell == cell && it.acceptedAt == tappedAt }
+    return if (exact >= 0) exact else indexOfFirst { it.cell == cell }
+}
 
 private fun List<QueuedTap>.withoutFirst(cell: CellKey): List<QueuedTap> {
     val index = indexOfFirst { it.cell == cell }
     return if (index < 0) this else filterIndexed { position, _ -> position != index }
 }
 
-private fun List<QueuedTap>.withWaiting(cell: CellKey, waiting: Boolean): List<QueuedTap> {
-    val index = indexOfFirst { it.cell == cell }
+private fun List<QueuedTap>.withoutTap(cell: CellKey, tappedAt: Instant): List<QueuedTap> {
+    val index = indexOfTap(cell, tappedAt)
+    return if (index < 0) this else filterIndexed { position, _ -> position != index }
+}
+
+private fun List<QueuedTap>.withWaiting(cell: CellKey, tappedAt: Instant, waiting: Boolean): List<QueuedTap> {
+    val index = indexOfTap(cell, tappedAt)
     return if (index < 0) this else mapIndexed { position, entry ->
         if (position == index) entry.copy(waiting = waiting) else entry
     }
 }
 
-private fun List<QueuedTap>.withPendingWork(cell: CellKey, tappedAt: Instant): List<QueuedTap> {
-    val index = indexOfFirst { it.cell == cell }
+private fun List<QueuedTap>.withPendingWork(cell: CellKey, tappedAt: Instant, request: SelectionRequest): List<QueuedTap> {
+    val index = indexOfTap(cell, tappedAt)
     return if (index < 0) {
-        this + QueuedTap(cell, tappedAt, workEnqueued = true, waiting = true)
+        this + QueuedTap(cell, tappedAt, request, workEnqueued = true, waiting = true)
     } else {
         mapIndexed { position, entry ->
             if (position == index) entry.copy(workEnqueued = true, waiting = true) else entry

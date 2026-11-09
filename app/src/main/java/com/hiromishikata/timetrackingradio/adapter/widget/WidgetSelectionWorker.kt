@@ -16,6 +16,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import java.time.DateTimeException
 import java.time.Instant
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
@@ -35,7 +36,7 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
 
     override fun onStopped() {
         scope.cancel()
-        controllerFactory(applicationContext).clearSending(inputCellOrNull())
+        inputTapOrNull()?.let { (cell, tappedAt) -> controllerFactory(applicationContext).markWaiting(cell, tappedAt) }
     }
 
     private suspend fun runSelection(): Result {
@@ -53,7 +54,7 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
             Result.retry()
         } catch (failure: Exception) {
             logWidgetWorkFailure(failure)
-            controller.clearSending(inputCellOrNull())
+            inputTapOrNull()?.let { (cell, tappedAt) -> controller.discardTap(cell, tappedAt) }
             currentCoroutineContext().ensureActive()
             WidgetWorkScheduler.enqueueDiagnosticsUpload(applicationContext)
             Result.success()
@@ -78,6 +79,20 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
         requestedCell()
     } catch (invalid: IllegalArgumentException) {
         null
+    }
+
+    private fun inputTappedAtOrNull(): Instant? = try {
+        requestedTappedAt()
+    } catch (invalid: IllegalArgumentException) {
+        null
+    } catch (invalid: DateTimeException) {
+        null
+    }
+
+    private fun inputTapOrNull(): Pair<CellKey, Instant>? {
+        val cell = inputCellOrNull() ?: return null
+        val tappedAt = inputTappedAtOrNull() ?: return null
+        return cell to tappedAt
     }
 
     companion object {

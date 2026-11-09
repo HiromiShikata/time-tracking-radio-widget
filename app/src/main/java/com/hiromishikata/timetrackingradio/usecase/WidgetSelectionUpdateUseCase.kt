@@ -4,6 +4,7 @@ import com.hiromishikata.timetrackingradio.domain.CellKey
 import com.hiromishikata.timetrackingradio.domain.CommunicationFailedException
 import com.hiromishikata.timetrackingradio.domain.NetworkUnavailableException
 import com.hiromishikata.timetrackingradio.domain.SelectionRepository
+import com.hiromishikata.timetrackingradio.domain.SelectionRequest
 import com.hiromishikata.timetrackingradio.domain.WidgetOutcome
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshotRepository
@@ -18,9 +19,11 @@ class WidgetSelectionUpdateUseCase(
     private val afterSendingStarted: () -> Unit = {},
     private val clock: () -> Instant,
 ) {
-    fun execute(tapped: CellKey, tappedAt: Instant): WidgetSnapshot {
+    fun execute(tapped: CellKey, tappedAt: Instant): WidgetSnapshot =
+        execute(resolveTapRequest(snapshots.read().selection, tapped), tappedAt)
+
+    fun execute(request: SelectionRequest, tappedAt: Instant): WidgetSnapshot {
         val previous = snapshots.read()
-        val request = resolveTapRequest(previous.selection, tapped)
         val sending = previous.copy(sending = request)
         snapshots.write(sending)
         val finished = try {
