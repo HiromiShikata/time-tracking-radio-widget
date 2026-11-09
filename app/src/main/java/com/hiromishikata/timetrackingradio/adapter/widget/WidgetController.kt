@@ -72,7 +72,7 @@ class WidgetController(
         )
         if (loaded != null) {
             synchronized(WidgetStateLock) {
-                queuedTaps.write(liveQueue(tappedAt) + QueuedTap(cell, tappedAt, workEnqueued))
+                queuedTaps.write(liveQueue(tappedAt) + QueuedTap(cell, tappedAt, workEnqueued, waiting = workEnqueued))
             }
             render()
         }
@@ -97,7 +97,7 @@ class WidgetController(
                     throw unavailable
                 } finally {
                     publishSettled(removing = if (completed) cell else null) { entries ->
-                        if (awaitingNetwork) entries.withWorkEnqueued(cell, true) else entries
+                        if (awaitingNetwork) entries.withPendingWork(cell, tappedAt) else entries
                     }
                 }
             }
@@ -132,7 +132,7 @@ class WidgetController(
     }
 
     private fun sendingStarted(cell: CellKey) {
-        val settled = settle(removing = null) { entries -> entries.withWorkEnqueued(cell, false) }
+        val settled = settle(removing = null) { entries -> entries.withWaiting(cell, false) }
         publish(settings.read(), settled.copy(sending = settled.sending ?: resolveTapRequest(settled.selection, cell)))
     }
 
@@ -150,7 +150,7 @@ class WidgetController(
         queuedTaps.write(remaining)
         val current = snapshots.read()
         val outcome = when {
-            remaining.any { it.workEnqueued } -> WidgetOutcome.WaitingForNetwork
+            remaining.any { it.waiting } -> WidgetOutcome.WaitingForNetwork
             current.outcome == WidgetOutcome.WaitingForNetwork -> WidgetOutcome.Settled
             else -> current.outcome
         }
@@ -187,10 +187,21 @@ private fun List<QueuedTap>.withoutFirst(cell: CellKey): List<QueuedTap> {
     return if (index < 0) this else filterIndexed { position, _ -> position != index }
 }
 
-private fun List<QueuedTap>.withWorkEnqueued(cell: CellKey, enqueued: Boolean): List<QueuedTap> {
+private fun List<QueuedTap>.withWaiting(cell: CellKey, waiting: Boolean): List<QueuedTap> {
     val index = indexOfFirst { it.cell == cell }
     return if (index < 0) this else mapIndexed { position, entry ->
-        if (position == index) entry.copy(workEnqueued = enqueued) else entry
+        if (position == index) entry.copy(waiting = waiting) else entry
+    }
+}
+
+private fun List<QueuedTap>.withPendingWork(cell: CellKey, tappedAt: Instant): List<QueuedTap> {
+    val index = indexOfFirst { it.cell == cell }
+    return if (index < 0) {
+        this + QueuedTap(cell, tappedAt, workEnqueued = true, waiting = true)
+    } else {
+        mapIndexed { position, entry ->
+            if (position == index) entry.copy(workEnqueued = true, waiting = true) else entry
+        }
     }
 }
 

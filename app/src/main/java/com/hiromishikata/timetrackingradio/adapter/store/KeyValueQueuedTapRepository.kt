@@ -12,7 +12,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.time.Instant
 
-data class QueuedTap(val cell: CellKey, val acceptedAt: Instant, val workEnqueued: Boolean)
+data class QueuedTap(val cell: CellKey, val acceptedAt: Instant, val workEnqueued: Boolean, val waiting: Boolean)
 
 class KeyValueQueuedTapRepository(private val store: KeyValueStore) {
     fun readAll(): List<QueuedTap> {
@@ -27,6 +27,7 @@ class KeyValueQueuedTapRepository(private val store: KeyValueStore) {
                 CellKey(project, activity),
                 Instant.parse(entry.getValue(ACCEPTED_AT_FIELD).jsonPrimitive.content),
                 entry[WORK_ENQUEUED_FIELD]?.jsonPrimitive?.booleanOrNull ?: false,
+                entry[WAITING_FIELD]?.jsonPrimitive?.booleanOrNull ?: false,
             )
         }
     }
@@ -43,6 +44,7 @@ class KeyValueQueuedTapRepository(private val store: KeyValueStore) {
                             put(ACTIVITY_FIELD, entry.cell.activity.code)
                             put(ACCEPTED_AT_FIELD, entry.acceptedAt.toString())
                             put(WORK_ENQUEUED_FIELD, entry.workEnqueued)
+                            put(WAITING_FIELD, entry.waiting)
                         },
                     )
                 }
@@ -57,5 +59,6 @@ class KeyValueQueuedTapRepository(private val store: KeyValueStore) {
         const val ACTIVITY_FIELD = "activity"
         const val ACCEPTED_AT_FIELD = "accepted_at"
         const val WORK_ENQUEUED_FIELD = "work_enqueued"
+        const val WAITING_FIELD = "waiting"
     }
 }
