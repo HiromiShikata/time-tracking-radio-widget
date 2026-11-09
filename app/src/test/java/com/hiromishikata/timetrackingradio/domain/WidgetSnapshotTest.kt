@@ -14,6 +14,7 @@ class WidgetSnapshotTest {
         earlier,
         WidgetOutcome.Settled,
         SelectionRequest.Select(CellKey("project-a", ActivityKind.MEETING)),
+        null,
     )
 
     @Test

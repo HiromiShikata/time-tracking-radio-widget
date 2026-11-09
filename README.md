@@ -5,7 +5,17 @@ A home-screen widget for Android. It shows a grid of projects and two activities
 ## What the widget shows
 
 - A header row (blank, `work`, `meeting`) and one row per configured project, in the configured order.
-- A ring is an unselected cell. A ring with a filled inner disc is the selected cell. A dashed ring marks the cell tapped last while its request is waiting or being sent. When several taps wait, only the last one is marked. A mark older than 10 minutes is removed at the next widget update or tap, even if its request never finishes, so it can stay visible until then, up to 30 minutes.
+- A ring is an unselected cell. A ring with a filled inner disc is the selected cell. A dashed ring marks the cell of the last tap that is still pending (the most recent one).
+- A tap is pending from the moment it is accepted, whether the device is online or offline. The status line follows the earliest pending tap: while that tap waits for the network, the status line reads `Waiting for network to send your selection…`; while its request is being sent, it reads `Switching to project-a / work…`.
+- The request a new tap sends is decided when the tap is accepted, against the selection the widget would show after every pending tap has been applied in order: a tap on the cell that would be selected sends a clear, and any other tap sends a selection. A pending tap keeps counting for this while its work is pending, even after the 24-hour display bound, with no age limit. At the start of every widget or refresh run, the app reads WorkManager's state for the tap work once: an entry whose work has finished or been cancelled is removed; an entry whose work is missing from WorkManager is removed once it is more than ten minutes old; an entry is kept when the state cannot be read. Every attempt sends that same request body, with the original `tappedAt`, so an endpoint can recognise a retried tap as the same tap.
+- The status line shows the head of the pending taps only. While an earlier tap is at the head, a later waiting tap does not change the status line. When the head completes, the next pending tap becomes the head and its state is shown.
+- When the endpoint cannot be reached because of a network failure (a name lookup, a connection, a timeout, a TLS handshake, or a connection that ends while the request, a redirect or the response is being handled), the tap stays pending until the next attempt starts, and the work is retried after a delay. The first retry comes 10 seconds after the failure, and each later retry waits twice as long as the one before, up to WorkManager's 5-hour maximum. Retries have no attempt limit. Taps are still sent one at a time in the order tapped, so a waiting tap holds back the later taps.
+- A permanent transport failure (a malformed endpoint URL, an unknown service, or a protocol error) is not retried. The request is sent once, the tap is removed, and the status line shows the unreachable state (`⚠ Could not connect`).
+- A tap still waiting from version 1.0.4 when this version installs is sent the way 1.0.4 sent it. Its request is decided when it is sent, from the selection shown then, and its body has no `tappedAt`, so the endpoint records the tap at the time it receives the request. It shows no dashed ring. It follows the same retry rules as any other tap.
+- When the system stops a tap's work before it finishes, the tap stays pending until the next attempt starts or the work ends.
+- A complete response from the endpoint is final: a success, an error response, or a body that is not a valid response is not retried, and the tap is removed. Reads (refreshes) are not retried.
+- A tap stops being pending when it is sent (a successful or an error response from the endpoint), when its work ends without a retry, or when its settings are gone when the work runs; its queue entry is removed when that happens, and an entry whose WorkManager work has finished or been cancelled is removed at the start of the next widget or refresh run. The ring and the status line stop showing it at the next widget update or tap.
+- Two display time limits hide a stale ring. A pending tap (its work is queued, waiting for the network or being sent) loses its ring and its status line 24 hours after the tap. This limit affects the display only: the tap is still sent, with the request it was accepted with and its original `tappedAt`, and it keeps retrying. A tap that was never queued as work loses its ring 10 minutes after the tap, so a stuck request cannot keep it visible forever.
 - One status line below the grid shows the current state in UTC, for example `Recording project-a / work since 08:39 UTC`.
 - The widget refreshes on its own every 30 minutes at the minimum, after you save the settings, and after every tap.
 
@@ -16,8 +26,8 @@ The app calls exactly the URL you configure. Any key must be part of that URL. A
 | Method | Body | Behaviour |
 |---|---|---|
 | GET | none | Returns the current selection. |
-| POST | `{"project": "project-a", "activity": "meeting"}` | Sets the selection. |
-| POST | `{"project": null, "activity": null}` | Clears the selection. |
+| POST | `{"project": "project-a", "activity": "meeting", "tappedAt": "2026-11-09T02:19:03.112Z"}` | Sets the selection. |
+| POST | `{"project": null, "activity": null, "tappedAt": "2026-11-09T02:19:03.112Z"}` | Clears the selection. |
 
 A successful response:
 
@@ -28,6 +38,7 @@ A successful response:
 - `selection` is `null` when nothing is selected.
 - A failure is `{"result": "ng", "message": "..."}`. The message is shown under the grid. When the response includes `selection`, the app shows that selection; when it is absent (for example a wrong key), the app keeps the previously shown selection.
 - `activity` is `work` or `meeting`. `since` is ISO-8601 in UTC with a trailing `Z`.
+- `tappedAt` is optional for the endpoint: the app sends it with every POST, except for a tap queued by version 1.0.4, which has none. An endpoint that ignores unknown keys keeps working without changes. It is the time the app accepted the tap, as ISO-8601 in UTC with a trailing `Z` and always three fractional digits (for example `2026-11-09T02:19:03.112Z`). A retried tap carries its original `tappedAt`.
 - A POST is answered with a redirect. The app follows the redirect with GET to read the result.
 
 ### Diagnostics (optional endpoint contract)

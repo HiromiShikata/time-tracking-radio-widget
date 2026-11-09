@@ -28,6 +28,7 @@ class WidgetDiagnosticsUploadWorkerTest {
     private val context: Context = RuntimeEnvironment.getApplication()
     private val meeting = CellKey("project-a", ActivityKind.MEETING)
     private val since = Instant.parse("2026-11-07T08:39:00Z")
+    private val tappedAt = Instant.parse("2026-11-09T02:19:03.112Z")
 
     @Before
     fun setUp() {
@@ -45,7 +46,7 @@ class WidgetDiagnosticsUploadWorkerTest {
     fun aPendingEntryIsUploadedAndTheWorkSucceeds() {
         val transport = EchoSelectionTransport()
         WidgetDiagnosticsUploadWorker.controllerFactory = { WidgetController(it, { transport }, { transport }, publish = { _, _ -> }) }
-        WidgetController(context, { transport }, { transport }, publish = { _, _ -> }).acceptTap(meeting)
+        WidgetController(context, { transport }, { transport }, publish = { _, _ -> }).acceptTap(meeting, workEnqueued = false)
         val result = TestListenableWorkerBuilder<WidgetDiagnosticsUploadWorker>(context).build().startWork().get()
         assertTrue("result=$result", result is ListenableWorker.Result.Success)
         assertEquals(listOf("POST"), transport.requests.map { it.method })
@@ -54,7 +55,7 @@ class WidgetDiagnosticsUploadWorkerTest {
 
     @Test
     fun anUploadThatThrowsFailsTheWorkAndLeavesTheSelectionUnchanged() {
-        val before = WidgetSnapshot(Selection(meeting, since), since, WidgetOutcome.Settled, null)
+        val before = WidgetSnapshot(Selection(meeting, since), since, WidgetOutcome.Settled, null, null)
         widgetSnapshots(context).write(before)
         val rendered = mutableListOf<WidgetSnapshot>()
         val transport = EchoSelectionTransport()

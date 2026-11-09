@@ -48,17 +48,19 @@ class ScreenshotRenderingTest {
     fun rendersEveryApprovedWidgetState() {
         val states = listOf(
             "widget-idle" to WidgetSnapshot.EMPTY,
-            "widget-recording" to WidgetSnapshot(Selection(projectBWork, since), now, WidgetOutcome.Settled, null),
+            "widget-recording" to WidgetSnapshot(Selection(projectBWork, since), now, WidgetOutcome.Settled, null, null),
             "widget-sending" to WidgetSnapshot(
                 Selection(projectBWork, since),
                 now,
                 WidgetOutcome.Settled,
+                SelectionRequest.Select(projectAMeeting),
                 SelectionRequest.Select(projectAMeeting),
             ),
             "widget-network-error" to WidgetSnapshot(
                 Selection(projectBWork, since),
                 since,
                 WidgetOutcome.Unreachable,
+                null,
                 null,
             ),
         )

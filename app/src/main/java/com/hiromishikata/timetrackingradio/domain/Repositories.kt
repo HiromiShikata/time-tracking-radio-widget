@@ -1,9 +1,15 @@
 package com.hiromishikata.timetrackingradio.domain
 
+import java.time.Instant
+
 interface SelectionRepository {
     fun read(): SelectionResponse
 
-    fun update(request: SelectionRequest): SelectionResponse
+    fun update(request: SelectionRequest, tappedAt: Instant): SelectionResponse
+}
+
+interface UnstampedSelectionRepository {
+    fun updateUnstamped(request: SelectionRequest): SelectionResponse
 }
 
 interface WidgetSnapshotRepository {

@@ -19,9 +19,9 @@ class KeyValueWidgetSnapshotRepositoryTest {
         val meeting = CellKey("project-a", ActivityKind.MEETING)
         val cases = listOf(
             WidgetSnapshot.EMPTY,
-            WidgetSnapshot(Selection(work, since), fetched, WidgetOutcome.Settled, null),
-            WidgetSnapshot(Selection(work, since), fetched, WidgetOutcome.Unreachable, SelectionRequest.Select(meeting)),
-            WidgetSnapshot(null, fetched, WidgetOutcome.Rejected("wrong key"), SelectionRequest.Clear),
+            WidgetSnapshot(Selection(work, since), fetched, WidgetOutcome.Settled, null, null),
+            WidgetSnapshot(Selection(work, since), fetched, WidgetOutcome.Unreachable, SelectionRequest.Select(meeting), null),
+            WidgetSnapshot(null, fetched, WidgetOutcome.Rejected("wrong key"), SelectionRequest.Clear, null),
         )
         cases.forEach { expected ->
             val store = InMemoryKeyValueStore()

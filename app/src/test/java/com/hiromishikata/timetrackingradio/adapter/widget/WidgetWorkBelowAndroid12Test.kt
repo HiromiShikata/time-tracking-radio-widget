@@ -7,7 +7,9 @@ import com.hiromishikata.timetrackingradio.TestApplication
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueWidgetSettingsRepository
 import com.hiromishikata.timetrackingradio.domain.ActivityKind
 import com.hiromishikata.timetrackingradio.domain.CellKey
+import com.hiromishikata.timetrackingradio.domain.SelectionRequest
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -16,12 +18,18 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import java.net.UnknownHostException
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [30], application = TestApplication::class)
 class WidgetWorkBelowAndroid12Test {
     private val context: Context = RuntimeEnvironment.getApplication()
     private val meeting = CellKey("project-a", ActivityKind.MEETING)
+
+    private fun acceptedTapFor(cell: CellKey): QueuedTapAccept =
+        WidgetController(context, publish = { _, _ -> }).acceptQueued(cell)
 
     @Before
     fun setUp() {
@@ -42,13 +50,47 @@ class WidgetWorkBelowAndroid12Test {
         WidgetSelectionWorker.controllerFactory = {
             WidgetController(it, { transport }, { EchoSelectionTransport() }, publish = { _, snapshot -> rendered += snapshot })
         }
-        WidgetWorkScheduler.enqueueTap(context, meeting)
+        WidgetWorkScheduler.enqueueWorkRequest(context, acceptedTapFor(meeting).workRequest)
         val work = advanceUniqueWork(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
         assertEquals("work state", WorkInfo.State.SUCCEEDED, work.state)
         assertEquals(
             listOf("project-a"),
             transport.requests.filter { it.method == "POST" }.map { selectedProjectOf(it) },
         )
+    }
+
+    @Test
+    fun aTapWhoseNetworkIsUnavailableIsRetriedAndSentOnceWithItsOriginalTappedAt() {
+        val clock = AtomicReference(TEST_TAPPED_AT)
+        val postAttempts = AtomicInteger()
+        val repliedPosts = AtomicInteger()
+        val transport = EchoSelectionTransport { request ->
+            if (request.method == "POST") {
+                if (postAttempts.incrementAndGet() == 1) {
+                    clock.set(TEST_TAPPED_AT.plusSeconds(30))
+                    throw UnknownHostException("unreachable.example")
+                }
+                repliedPosts.incrementAndGet()
+            }
+        }
+        val factory: (Context) -> WidgetController = {
+            WidgetController(it, { transport }, { EchoSelectionTransport() }, publish = { _, _ -> }, clock = { clock.get() })
+        }
+        SelectionWidgetProvider.controllerFactory = factory
+        WidgetSelectionWorker.controllerFactory = factory
+
+        SelectionWidgetProvider().onReceive(context, cellTapIntent(meeting.project, meeting.activity.code))
+        driveUniqueWorkToFinish(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
+
+        assertEquals("work state", WorkInfo.State.SUCCEEDED, uniqueWorkInfos(context, WidgetSelectionWorker.UNIQUE_WORK_NAME).single().state)
+        val posts = transport.requests.filter { it.method == "POST" }
+        assertEquals("POST attempts, the failed one and the retry", 2, posts.size)
+        assertEquals("POSTs that received a reply", 1, repliedPosts.get())
+        assertEquals(
+            listOf(TEST_TAPPED_AT_TEXT, TEST_TAPPED_AT_TEXT),
+            posts.map { postedBodyOf(it).getValue("tappedAt").jsonPrimitive.content },
+        )
+        assertEquals(meeting, widgetSnapshots(context).read().selection?.cell)
     }
 
     @Test

@@ -7,6 +7,8 @@ sealed interface WidgetOutcome {
 
     data object Unreachable : WidgetOutcome
 
+    data object WaitingForNetwork : WidgetOutcome
+
     data class Rejected(val message: String) : WidgetOutcome
 }
 
@@ -15,18 +17,19 @@ data class WidgetSnapshot(
     val fetchedAt: Instant?,
     val outcome: WidgetOutcome,
     val sending: SelectionRequest?,
+    val statusRequest: SelectionRequest?,
 ) {
     companion object {
-        val EMPTY = WidgetSnapshot(null, null, WidgetOutcome.Settled, null)
+        val EMPTY = WidgetSnapshot(null, null, WidgetOutcome.Settled, null, null)
     }
 }
 
 fun applySelectionResponse(response: SelectionResponse, previous: WidgetSnapshot, now: Instant): WidgetSnapshot =
     when (response) {
-        is SelectionResponse.Accepted -> WidgetSnapshot(response.selection, now, WidgetOutcome.Settled, null)
+        is SelectionResponse.Accepted -> WidgetSnapshot(response.selection, now, WidgetOutcome.Settled, null, null)
         is SelectionResponse.Rejected -> when (val reported = response.reported) {
             is ReportedSelection.Reported ->
-                WidgetSnapshot(reported.selection, now, WidgetOutcome.Rejected(response.message), null)
+                WidgetSnapshot(reported.selection, now, WidgetOutcome.Rejected(response.message), null, null)
             ReportedSelection.NotReported ->
                 previous.copy(outcome = WidgetOutcome.Rejected(response.message), sending = null)
         }

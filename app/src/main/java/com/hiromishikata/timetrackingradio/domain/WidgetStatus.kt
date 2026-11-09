@@ -7,6 +7,8 @@ sealed interface WidgetStatus {
 
     data object NotRecording : WidgetStatus
 
+    data object WaitingForNetwork : WidgetStatus
+
     data class Switching(val cell: CellKey) : WidgetStatus
 
     data class Unreachable(val asOf: Instant) : WidgetStatus
@@ -20,6 +22,7 @@ fun resolveWidgetStatus(
     outcome: WidgetOutcome,
     asOf: Instant,
 ): WidgetStatus = when {
+    outcome == WidgetOutcome.WaitingForNetwork && sending != null -> WidgetStatus.WaitingForNetwork
     sending is SelectionRequest.Select -> WidgetStatus.Switching(sending.cell)
     sending == SelectionRequest.Clear -> WidgetStatus.NotRecording
     outcome == WidgetOutcome.Unreachable -> WidgetStatus.Unreachable(asOf)

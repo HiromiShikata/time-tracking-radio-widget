@@ -34,19 +34,19 @@ class WidgetSnapshotReadUseCaseTest {
                 "accepted response replaces the state",
                 WidgetSnapshot.EMPTY,
                 { SelectionResponse.Accepted(Selection(work, earlier)) },
-                WidgetSnapshot(Selection(work, earlier), now, WidgetOutcome.Settled, null),
+                WidgetSnapshot(Selection(work, earlier), now, WidgetOutcome.Settled, null, null),
             ),
             Case(
                 "network failure keeps the last state and clears a stale request",
-                WidgetSnapshot(Selection(work, earlier), earlier, WidgetOutcome.Settled, SelectionRequest.Select(meeting)),
+                WidgetSnapshot(Selection(work, earlier), earlier, WidgetOutcome.Settled, SelectionRequest.Select(meeting), null),
                 unreachable,
-                WidgetSnapshot(Selection(work, earlier), earlier, WidgetOutcome.Unreachable, null),
+                WidgetSnapshot(Selection(work, earlier), earlier, WidgetOutcome.Unreachable, null, null),
             ),
             Case(
                 "rejection without a reported selection keeps the last state",
-                WidgetSnapshot(Selection(work, earlier), earlier, WidgetOutcome.Settled, null),
+                WidgetSnapshot(Selection(work, earlier), earlier, WidgetOutcome.Settled, null, null),
                 { SelectionResponse.Rejected("wrong key", ReportedSelection.NotReported) },
-                WidgetSnapshot(Selection(work, earlier), earlier, WidgetOutcome.Rejected("wrong key"), null),
+                WidgetSnapshot(Selection(work, earlier), earlier, WidgetOutcome.Rejected("wrong key"), null, null),
             ),
         )
         cases.forEach { case ->
@@ -60,12 +60,12 @@ class WidgetSnapshotReadUseCaseTest {
 
     @Test
     fun anyUnexpectedFailureOnRefreshClearsTheStaleSendingState() {
-        val earlierSnapshot = WidgetSnapshot(Selection(work, earlier), earlier, WidgetOutcome.Settled, SelectionRequest.Select(meeting))
+        val earlierSnapshot = WidgetSnapshot(Selection(work, earlier), earlier, WidgetOutcome.Settled, SelectionRequest.Select(meeting), null)
         val selections = FakeSelectionRepository(onRead = { throw IllegalStateException("unexpected") })
         val snapshots = FakeWidgetSnapshotRepository(earlierSnapshot)
         val thrown = runCatching { WidgetSnapshotReadUseCase(selections, snapshots) { now }.execute() }.exceptionOrNull()
         assertTrue("thrown=$thrown", thrown is IllegalStateException)
-        assertEquals(WidgetSnapshot(Selection(work, earlier), earlier, WidgetOutcome.Settled, null), snapshots.read())
+        assertEquals(WidgetSnapshot(Selection(work, earlier), earlier, WidgetOutcome.Settled, null, null), snapshots.read())
     }
 }
 
