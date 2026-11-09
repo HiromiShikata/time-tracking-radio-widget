@@ -1,6 +1,7 @@
 package com.hiromishikata.timetrackingradio.adapter.widget
 
 import android.content.Context
+import com.hiromishikata.timetrackingradio.R
 import com.hiromishikata.timetrackingradio.TestApplication
 import com.hiromishikata.timetrackingradio.adapter.http.FakeHttpTransport
 import com.hiromishikata.timetrackingradio.adapter.http.HttpRequest
@@ -501,17 +502,17 @@ class WidgetControllerTest {
     }
 
     @Test
-    fun aPendingTapKeepsItsRingAndWaitingStatusUntilTheSixtyMinuteCeiling() {
+    fun aPendingTapKeepsItsRingAndWaitingStatusUntilTheTwentyFourHourCeiling() {
         val cases = listOf(
             PendingCeilingCase(
-                "fifty-nine minutes after acceptance with the work still enqueued keeps the ring and the waiting status",
-                59,
+                "twenty-three hours fifty-nine minutes after acceptance with the work still enqueued keeps the ring and the waiting status",
+                23 * 60 + 59,
                 SelectionRequest.Select(work),
                 true,
             ),
             PendingCeilingCase(
-                "sixty-one minutes after acceptance with the work still enqueued drops the ring and the waiting status",
-                61,
+                "twenty-four hours one minute after acceptance with the work still enqueued drops the ring and the waiting status",
+                24 * 60 + 1,
                 null,
                 false,
             ),
@@ -553,4 +554,91 @@ class WidgetControllerTest {
             assertEquals("case=${case.name}", 0, transport.calls)
         }
     }
+
+    @Test
+    fun theEarliestPendingTapOwnsTheRingWhileBothTapsWait() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val rendered = mutableListOf<WidgetSnapshot>()
+        val controller = recordingController(ForbiddenTransport(), rendered) { tappedAt }
+        controller.acceptTap(meeting, workEnqueued = true)
+        controller.acceptTap(work, workEnqueued = true)
+        val snapshot = rendered.last()
+        val status = renderedStatusText(context, snapshot)
+        assertEquals(SelectionRequest.Select(meeting), snapshot.sending)
+        assertTrue("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
+    }
+
+    @Test
+    fun theEarliestPendingTapShowsTheSwitchingStatusWhileItsPostRunsAndTheLaterTapWaitsBehindIt() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val transport = GatedSelectionTransport(clearedBody)
+        val rendered = CopyOnWriteArrayList<WidgetSnapshot>()
+        recordingController(transport, rendered) { tappedAt }.acceptTap(meeting, workEnqueued = true)
+        recordingController(transport, rendered) { tappedAt }.acceptTap(work, workEnqueued = true)
+        val first = thread { runBlocking { recordingController(transport, rendered) { tappedAt }.performTap(meeting, tappedAt) } }
+        try {
+            assertTrue("the earliest tap's POST started", transport.selectionStarted.await(5, TimeUnit.SECONDS))
+            val sending = awaitLastRendered(rendered) { !WAITING_FOR_NETWORK_TEXT.containsMatchIn(renderedStatusText(context, it)) }
+            val status = renderedStatusText(context, sending)
+            assertTrue("status=$status", status.startsWith("Switching to project-a / meeting"))
+            assertEquals(SelectionRequest.Select(meeting), sending.sending)
+        } finally {
+            transport.releaseSelection.countDown()
+            first.join(5_000)
+        }
+    }
+
+    @Test
+    fun whenTheEarliestPendingTapCompletesTheLaterTapBecomesTheHeadAndTheFirstRingIsGone() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val transport = GatedSelectionTransport(clearedBody)
+        val rendered = CopyOnWriteArrayList<WidgetSnapshot>()
+        recordingController(transport, rendered) { tappedAt }.acceptTap(meeting, workEnqueued = true)
+        recordingController(transport, rendered) { tappedAt }.acceptTap(work, workEnqueued = true)
+        val first = thread { runBlocking { recordingController(transport, rendered) { tappedAt }.performTap(meeting, tappedAt) } }
+        try {
+            assertTrue("the earliest tap's POST started", transport.selectionStarted.await(5, TimeUnit.SECONDS))
+        } finally {
+            transport.releaseSelection.countDown()
+            first.join(5_000)
+        }
+        val last = rendered.last()
+        val status = renderedStatusText(context, last)
+        assertEquals(SelectionRequest.Select(work), last.sending)
+        assertTrue("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
+        assertFalse("the completed tap's ring is gone", renderedCellDrawableResId(context, last, meeting) == R.drawable.cell_sending)
+    }
+
+    @Test
+    fun aTapFixesItsRequestAtAcceptanceSoAChangedSelectionDoesNotChangeTheSentBody() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val projectAWork = CellKey("project-a", ActivityKind.WORK)
+        KeyValueWidgetSnapshotRepository(store).write(WidgetSnapshot(Selection(projectAWork, since), since, WidgetOutcome.Settled, null))
+        val transport = FakeHttpTransport(ArrayDeque<() -> HttpResponse>(listOf({ HttpResponse(200, null, clearedBody) })))
+        val controller = recordingController(transport, mutableListOf()) { tappedAt }
+        val accepted = controller.acceptTap(projectAWork, workEnqueued = true)
+        KeyValueWidgetSnapshotRepository(store).write(WidgetSnapshot(Selection(meeting, since), since, WidgetOutcome.Settled, null))
+        runBlocking { controller.performTap(projectAWork, accepted) }
+        assertEquals(listOf(CLEAR_BODY_AT_TAPPED_AT), transport.requests.filter { it.method == "POST" }.map { it.body })
+    }
+
+    @Test
+    fun twoPendingTapsOnTheSameCellKeepTheLaterEntryWhenTheEarlierOneCompletes() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        var now = tappedAt
+        val rendered = mutableListOf<WidgetSnapshot>()
+        val transport = FakeHttpTransport(ArrayDeque<() -> HttpResponse>(listOf({ HttpResponse(200, null, clearedBody) })))
+        val controller = recordingController(transport, rendered) { now }
+        controller.acceptTap(meeting, workEnqueued = true)
+        now = tappedAt.plusSeconds(1)
+        controller.acceptTap(meeting, workEnqueued = true)
+        runBlocking { controller.performTap(meeting, tappedAt) }
+        val last = rendered.last()
+        val status = renderedStatusText(context, last)
+        assertEquals(SelectionRequest.Select(meeting), last.sending)
+        assertEquals(R.drawable.cell_sending, renderedCellDrawableResId(context, last, meeting))
+        assertTrue("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
+    }
 }
+
+private const val CLEAR_BODY_AT_TAPPED_AT = """{"project":null,"activity":null,"tappedAt":"2026-11-09T02:19:03.112Z"}"""

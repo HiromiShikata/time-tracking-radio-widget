@@ -10,17 +10,21 @@ import com.hiromishikata.timetrackingradio.TestApplication
 import com.hiromishikata.timetrackingradio.adapter.http.HttpRequest
 import com.hiromishikata.timetrackingradio.adapter.http.HttpResponse
 import com.hiromishikata.timetrackingradio.adapter.http.HttpTransport
+import com.google.common.util.concurrent.ListenableFuture
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueWidgetSettingsRepository
+import com.hiromishikata.timetrackingradio.adapter.store.SETTINGS_PREFERENCES_NAME
 import com.hiromishikata.timetrackingradio.domain.ActivityKind
 import com.hiromishikata.timetrackingradio.domain.CellKey
 import com.hiromishikata.timetrackingradio.domain.Selection
 import com.hiromishikata.timetrackingradio.domain.SelectionRequest
 import com.hiromishikata.timetrackingradio.domain.WidgetOutcome
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -29,7 +33,10 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import java.io.EOFException
+import java.io.IOException
 import java.net.ConnectException
+import java.net.ProtocolException
 import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -37,6 +44,7 @@ import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLException
 import javax.net.ssl.SSLHandshakeException
 
 @RunWith(RobolectricTestRunner::class)
@@ -235,5 +243,126 @@ class WidgetSelectionWorkerTest {
         assertNull(widgetSnapshots(context).read().sending)
         assertNull(rendered.last().sending)
         assertEquals(Selection(meeting, since), widgetSnapshots(context).read().selection)
+    }
+
+    private data class TransportFailureCase(val name: String, val failure: IOException, val failsOnRedirectFollowUp: Boolean)
+
+    @Test
+    fun anIOExceptionFromTheTransportDuringATapRequestRequestsARetryAndKeepsTheTap() {
+        val cases = listOf(
+            TransportFailureCase("unexpected end of stream", IOException("unexpected end of stream"), false),
+            TransportFailureCase("TLS exception", SSLException("handshake"), false),
+            TransportFailureCase("end of file", EOFException(), false),
+            TransportFailureCase("protocol exception", ProtocolException("bad"), false),
+            TransportFailureCase("unexpected end of stream on the redirect follow-up", IOException("unexpected end of stream"), true),
+            TransportFailureCase("TLS exception on the redirect follow-up", SSLException("handshake"), true),
+            TransportFailureCase("end of file on the redirect follow-up", EOFException(), true),
+            TransportFailureCase("protocol exception on the redirect follow-up", ProtocolException("bad"), true),
+        )
+        cases.forEach { case ->
+            resetWidgetState()
+            rendered.clear()
+            val failing = FailingTapTransport(case.failure, case.failsOnRedirectFollowUp)
+            WidgetSelectionWorker.controllerFactory = {
+                WidgetController(it, { failing }, { EchoSelectionTransport() }, publish = { _, snapshot -> rendered += snapshot })
+            }
+            val result = runWorker(tapInput)
+            assertTrue("case=${case.name} result=$result", result is ListenableWorker.Result.Retry)
+            assertEquals("case=${case.name}", SelectionRequest.Select(meeting), widgetSnapshots(context).read().sending)
+            assertEquals("case=${case.name}", SelectionRequest.Select(meeting), rendered.last().sending)
+        }
+    }
+
+    @Test
+    fun aCompleteResponseWithANonJsonBodyIsNotRetriedAndTheTapIsNotResent() {
+        resetWidgetState()
+        val posts = CopyOnWriteArrayList<HttpRequest>()
+        val notJson = object : HttpTransport {
+            override fun send(request: HttpRequest): HttpResponse {
+                posts += request
+                return HttpResponse(200, null, "not json")
+            }
+        }
+        WidgetSelectionWorker.controllerFactory = {
+            WidgetController(it, { notJson }, { EchoSelectionTransport() }, publish = { _, snapshot -> rendered += snapshot })
+        }
+        val result = runWorker(tapInput)
+        assertFalse("result=$result", result is ListenableWorker.Result.Retry)
+        assertEquals(1, posts.count { it.method == "POST" })
+    }
+
+    @Test
+    fun aStoppedWorkDoesNotClearATapThatIsStillPending() {
+        resetWidgetState()
+        WidgetSelectionWorker.controllerFactory(context).acceptTap(meeting, workEnqueued = true)
+        val heldWork = WidgetScope.mutex
+        runBlocking { heldWork.lock() }
+        try {
+            val worker = TestListenableWorkerBuilder<WidgetSelectionWorker>(context).setInputData(tapInput).build()
+            val outcome = worker.startWork()
+            worker.onStopped()
+            awaitFinished(outcome)
+        } finally {
+            heldWork.unlock()
+        }
+        val last = rendered.last()
+        val status = renderedStatusText(context, last)
+        assertEquals("the stopped tap keeps its ring", SelectionRequest.Select(meeting), last.sending)
+        assertEquals(R.drawable.cell_sending, renderedCellDrawableResId(context, last, meeting))
+        assertTrue("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
+        assertEquals(SelectionRequest.Select(meeting), widgetSnapshots(context).read().sending)
+    }
+
+    @Test
+    fun aRetriedTapSendsTheRequestFixedAtAcceptanceOnEveryAttempt() {
+        resetWidgetState()
+        val flaky = FirstPostFailsTransport(UnknownHostException("unreachable.example"))
+        WidgetSelectionWorker.controllerFactory = {
+            WidgetController(it, { flaky }, { EchoSelectionTransport() }, publish = { _, snapshot -> rendered += snapshot }, clock = { TEST_TAPPED_AT })
+        }
+        WidgetSelectionWorker.controllerFactory(context).acceptTap(meeting, workEnqueued = true)
+        val first = runWorker(tapInput)
+        assertTrue("first=$first", first is ListenableWorker.Result.Retry)
+        widgetSnapshots(context).write(WidgetSnapshot(Selection(meeting, since), since, WidgetOutcome.Settled, null))
+        val second = runWorker(tapInput)
+        assertTrue("second=$second", second is ListenableWorker.Result.Success)
+        assertEquals(listOf(SELECT_MEETING_BODY, SELECT_MEETING_BODY), flaky.postBodies)
+    }
+
+    private fun resetWidgetState() {
+        context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE).edit().clear().commit()
+        KeyValueWidgetSettingsRepository(widgetPreferences(context)).write(WIDGET_TEST_SETTINGS)
+    }
+
+    private fun awaitFinished(outcome: ListenableFuture<ListenableWorker.Result>) {
+        val deadline = System.currentTimeMillis() + 5_000
+        while (!outcome.isDone) {
+            check(System.currentTimeMillis() < deadline) { "the stopped work did not finish" }
+            Thread.sleep(10)
+        }
+    }
+}
+
+private const val SELECT_MEETING_BODY = """{"project":"project-a","activity":"meeting","tappedAt":"2026-11-09T02:19:03.112Z"}"""
+
+private const val EMPTY_SELECTION_BODY = """{"result":"ok","selection":null}"""
+
+private class FailingTapTransport(private val failure: IOException, private val failsOnRedirectFollowUp: Boolean) : HttpTransport {
+    override fun send(request: HttpRequest): HttpResponse {
+        if (request.method == "POST" && failsOnRedirectFollowUp) {
+            return HttpResponse(302, "https://example.com/echo", "")
+        }
+        throw failure
+    }
+}
+
+private class FirstPostFailsTransport(private val failure: IOException) : HttpTransport {
+    val postBodies: MutableList<String?> = CopyOnWriteArrayList()
+
+    override fun send(request: HttpRequest): HttpResponse {
+        if (request.method != "POST") return HttpResponse(200, null, EMPTY_SELECTION_BODY)
+        postBodies += request.body
+        if (postBodies.size == 1) throw failure
+        return HttpResponse(200, null, EMPTY_SELECTION_BODY)
     }
 }

@@ -3,6 +3,7 @@ package com.hiromishikata.timetrackingradio.adapter.http
 import com.hiromishikata.timetrackingradio.domain.ActivityKind
 import com.hiromishikata.timetrackingradio.domain.CellKey
 import com.hiromishikata.timetrackingradio.domain.CommunicationFailedException
+import com.hiromishikata.timetrackingradio.domain.NetworkUnavailableException
 import com.hiromishikata.timetrackingradio.domain.SelectionRequest
 import com.hiromishikata.timetrackingradio.domain.SelectionResponse
 import org.junit.Assert.assertEquals
@@ -14,6 +15,7 @@ import java.net.ConnectException
 import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import javax.net.ssl.SSLException
 import javax.net.ssl.SSLHandshakeException
 
 class HttpSelectionRepositoryTest {
@@ -102,6 +104,21 @@ class HttpSelectionRepositoryTest {
             assertTrue(
                 "failure=$failure thrown=$thrown",
                 thrown is CommunicationFailedException && thrown.cause === failure,
+            )
+        }
+    }
+
+    @Test
+    fun aPlainIOExceptionOrSslExceptionDuringATapBecomesANetworkUnavailableFailure() {
+        val failures = listOf<IOException>(IOException("unexpected end of stream"), SSLException("handshake"))
+        failures.forEach { failure ->
+            val script: () -> HttpResponse = { throw failure }
+            val thrown = runCatching {
+                HttpSelectionRepository(endpoint, FakeHttpTransport(ArrayDeque(listOf(script)))).update(request, tappedAt)
+            }.exceptionOrNull()
+            assertTrue(
+                "failure=$failure thrown=$thrown",
+                thrown is NetworkUnavailableException && thrown.cause === failure,
             )
         }
     }
