@@ -1,6 +1,5 @@
 package com.hiromishikata.timetrackingradio.adapter.widget
 
-import java.util.UUID
 import android.content.Context
 import androidx.work.WorkInfo
 import androidx.work.testing.WorkManagerTestInitHelper
@@ -20,7 +19,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.net.UnknownHostException
-import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
@@ -30,8 +28,8 @@ class WidgetWorkBelowAndroid12Test {
     private val context: Context = RuntimeEnvironment.getApplication()
     private val meeting = CellKey("project-a", ActivityKind.MEETING)
 
-    private fun acceptedTapAt(cell: CellKey): Instant =
-        WidgetController(context, publish = { _, _ -> }).acceptTap(cell, workEnqueued = true, workId = UUID.randomUUID()).tappedAt
+    private fun acceptedTapFor(cell: CellKey): QueuedTapAccept =
+        WidgetController(context, publish = { _, _ -> }).acceptQueued(cell)
 
     @Before
     fun setUp() {
@@ -52,7 +50,7 @@ class WidgetWorkBelowAndroid12Test {
         WidgetSelectionWorker.controllerFactory = {
             WidgetController(it, { transport }, { EchoSelectionTransport() }, publish = { _, snapshot -> rendered += snapshot })
         }
-        WidgetWorkScheduler.enqueueTap(context, meeting, acceptedTapAt(meeting), SelectionRequest.Select(meeting))
+        WidgetWorkScheduler.enqueueWorkRequest(context, acceptedTapFor(meeting).workRequest)
         val work = advanceUniqueWork(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
         assertEquals("work state", WorkInfo.State.SUCCEEDED, work.state)
         assertEquals(

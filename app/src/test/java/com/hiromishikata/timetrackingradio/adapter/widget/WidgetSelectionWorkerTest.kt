@@ -1,6 +1,5 @@
 package com.hiromishikata.timetrackingradio.adapter.widget
 
-import java.util.UUID
 import android.content.Context
 import androidx.work.Data
 import androidx.work.ListenableWorker
@@ -86,9 +85,9 @@ class WidgetSelectionWorkerTest {
         TestListenableWorkerBuilder<WidgetSelectionWorker>(context).setInputData(input).build().startWork().get()
 
     private fun acceptedTapInput(): Data {
-        val accepted = WidgetSelectionWorker.controllerFactory(context).acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
+        val accepted = WidgetSelectionWorker.controllerFactory(context).acceptQueued(meeting)
         rendered.clear()
-        return storedTapInput(context, meeting, accepted.tappedAt, accepted.request)
+        return storedTapInput(context, accepted.workRequest)
     }
 
     private fun legacyTapInput(): Data = workDataOf(
@@ -269,7 +268,7 @@ class WidgetSelectionWorkerTest {
     fun aStoppedWorkClearsTheSendingState() {
         KeyValueWidgetSettingsRepository(widgetPreferences(context)).write(WIDGET_TEST_SETTINGS)
         widgetSnapshots(context).write(WidgetSnapshot(Selection(meeting, since), since, WidgetOutcome.Settled, SelectionRequest.Select(meeting), null))
-        val worker = TestListenableWorkerBuilder<WidgetSelectionWorker>(context).setInputData(storedTapInput(context, meeting, TEST_TAPPED_AT, SelectionRequest.Select(meeting))).build()
+        val worker = TestListenableWorkerBuilder<WidgetSelectionWorker>(context).setInputData(storedTapInput(context, WidgetWorkScheduler.buildTapRequest(meeting, TEST_TAPPED_AT, SelectionRequest.Select(meeting)))).build()
         worker.onStopped()
         assertNull(widgetSnapshots(context).read().sending)
         assertNull(rendered.last().sending)
@@ -467,14 +466,14 @@ class WidgetSelectionWorkerTest {
         resetWidgetState()
         val clock = AtomicReference(TEST_TAPPED_AT)
         val accepting = WidgetController(context, { EchoSelectionTransport() }, { EchoSelectionTransport() }, publish = { _, _ -> }, clock = { clock.get() })
-        val accepted = accepting.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
-        clock.set(accepted.tappedAt.plusSeconds(25 * 60 * 60L))
+        val accepted = accepting.acceptQueued(meeting)
+        clock.set(accepted.accepted.tappedAt.plusSeconds(25 * 60 * 60L))
         rendered.clear()
         transport = EchoSelectionTransport { throw UnknownHostException("unreachable.example") }
         WidgetSelectionWorker.controllerFactory = {
             WidgetController(it, { transport }, { EchoSelectionTransport() }, publish = { _, snapshot -> rendered += snapshot }, clock = { clock.get() })
         }
-        val result = runWorker(storedTapInput(context, meeting, accepted.tappedAt, accepted.request))
+        val result = runWorker(storedTapInput(context, accepted.workRequest))
         assertTrue("result=$result", result is ListenableWorker.Result.Retry)
         val stored = widgetSnapshots(context).read()
         val last = rendered.last()
@@ -501,12 +500,11 @@ class WidgetSelectionWorkerTest {
     @Test
     fun aPendingEntryWhoseWorkWasCancelledIsDroppedAtTheNextWorkerRun() {
         val controller = WidgetController(context, { transport }, { EchoSelectionTransport() }, publish = { _, _ -> }, clock = { acceptedAt })
-        val work = WidgetWorkScheduler.buildTapRequest(meeting, acceptedAt, SelectionRequest.Select(meeting))
-        controller.acceptTap(meeting, workEnqueued = true, workId = work.id)
-        WidgetWorkScheduler.enqueueWorkRequest(context, work)
-        WorkManager.getInstance(context).cancelWorkById(work.id).result.get(30, TimeUnit.SECONDS)
+        val accepted = controller.acceptQueued(meeting)
+        WidgetWorkScheduler.enqueueWorkRequest(context, accepted.workRequest)
+        WorkManager.getInstance(context).cancelWorkById(accepted.workRequest.id).result.get(30, TimeUnit.SECONDS)
         runWorker(Data.EMPTY)
-        val probe = controller.acceptTap(meeting, workEnqueued = false, workId = UUID.randomUUID())
+        val probe = controller.acceptTap(meeting, workEnqueued = false)
         assertEquals(SelectionRequest.Select(meeting), probe.request)
     }
 
@@ -514,15 +512,14 @@ class WidgetSelectionWorkerTest {
     fun aPendingEntryWhoseWorkIsStillEnqueuedCountsForProjectionAfterEightDays() {
         val clock = AtomicReference(acceptedAt)
         val controller = WidgetController(context, { transport }, { EchoSelectionTransport() }, publish = { _, _ -> }, clock = { clock.get() })
-        val work = WidgetWorkScheduler.buildTapRequest(meeting, acceptedAt, SelectionRequest.Select(meeting))
-        controller.acceptTap(meeting, workEnqueued = true, workId = work.id)
-        WidgetWorkScheduler.enqueueWorkRequest(context, work)
+        val accepted = controller.acceptQueued(meeting)
+        WidgetWorkScheduler.enqueueWorkRequest(context, accepted.workRequest)
         clock.set(acceptedAt.plus(Duration.ofDays(8)))
         WidgetSelectionWorker.controllerFactory = { WidgetController(it, { transport }, { EchoSelectionTransport() }, publish = { _, snapshot -> rendered += snapshot }, clock = { clock.get() }) }
         runWorker(Data.EMPTY)
-        val state = checkNotNull(WorkManager.getInstance(context).getWorkInfoById(work.id).get(30, TimeUnit.SECONDS)).state
+        val state = checkNotNull(WorkManager.getInstance(context).getWorkInfoById(accepted.workRequest.id).get(30, TimeUnit.SECONDS)).state
         assertEquals(WorkInfo.State.ENQUEUED, state)
-        val probe = controller.acceptTap(meeting, workEnqueued = false, workId = UUID.randomUUID())
+        val probe = controller.acceptTap(meeting, workEnqueued = false)
         assertEquals(SelectionRequest.Clear, probe.request)
     }
 
@@ -530,10 +527,10 @@ class WidgetSelectionWorkerTest {
     fun aPendingEntryWhoseWorkIsAbsentIsKeptInsideTheTenMinuteGracePeriod() {
         val clock = AtomicReference(acceptedAt)
         val controller = WidgetController(context, { transport }, { EchoSelectionTransport() }, publish = { _, _ -> }, clock = { clock.get() })
-        controller.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
+        controller.acceptQueued(meeting)
         WidgetSelectionWorker.controllerFactory = { WidgetController(it, { transport }, { EchoSelectionTransport() }, publish = { _, snapshot -> rendered += snapshot }, clock = { clock.get() }) }
         runWorker(Data.EMPTY)
-        val probe = controller.acceptTap(meeting, workEnqueued = false, workId = UUID.randomUUID())
+        val probe = controller.acceptTap(meeting, workEnqueued = false)
         assertEquals(SelectionRequest.Clear, probe.request)
     }
 
@@ -541,28 +538,27 @@ class WidgetSelectionWorkerTest {
     fun aPendingEntryWhoseWorkIsAbsentIsDroppedAfterTheTenMinuteGracePeriod() {
         val clock = AtomicReference(acceptedAt)
         val controller = WidgetController(context, { transport }, { EchoSelectionTransport() }, publish = { _, _ -> }, clock = { clock.get() })
-        controller.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
+        controller.acceptQueued(meeting)
         clock.set(acceptedAt.plusSeconds(11 * 60))
         WidgetSelectionWorker.controllerFactory = { WidgetController(it, { transport }, { EchoSelectionTransport() }, publish = { _, snapshot -> rendered += snapshot }, clock = { clock.get() }) }
         runWorker(Data.EMPTY)
-        val probe = controller.acceptTap(meeting, workEnqueued = false, workId = UUID.randomUUID())
+        val probe = controller.acceptTap(meeting, workEnqueued = false)
         assertEquals(SelectionRequest.Select(meeting), probe.request)
     }
 
     @Test
-    fun anAcceptedTapStoresTheWorkIdPassedToAcceptTap() {
-        val workId = UUID.randomUUID()
-        WidgetController(context, { transport }, { EchoSelectionTransport() }, publish = { _, _ -> }, clock = { acceptedAt })
-            .acceptTap(meeting, workEnqueued = true, workId = workId)
-        assertEquals(listOf(workId), KeyValueQueuedTapRepository(widgetPreferences(context)).readAll().map { it.workId })
+    fun anAcceptedQueuedTapStoresTheIdOfTheWorkRequestItBuilt() {
+        val accepted = WidgetController(context, { transport }, { EchoSelectionTransport() }, publish = { _, _ -> }, clock = { acceptedAt })
+            .acceptQueued(meeting)
+        assertEquals(listOf(accepted.workRequest.id), KeyValueQueuedTapRepository(widgetPreferences(context)).readAll().map { it.workId })
     }
 
     @Test
     fun anEnqueueFailureDiscardsTheAcceptedTapSoTheSameCellProjectsSelectAgain() {
         val controller = WidgetController(context, { transport }, { EchoSelectionTransport() }, publish = { _, _ -> }, clock = { acceptedAt })
-        val accepted = controller.acceptTap(meeting, workEnqueued = true, workId = UUID.randomUUID())
-        controller.discardTap(meeting, accepted.tappedAt)
-        val probe = controller.acceptTap(meeting, workEnqueued = false, workId = UUID.randomUUID())
+        val accepted = controller.acceptQueued(meeting)
+        controller.discardTap(meeting, accepted.accepted.tappedAt)
+        val probe = controller.acceptTap(meeting, workEnqueued = false)
         assertEquals(SelectionRequest.Select(meeting), probe.request)
     }
 }

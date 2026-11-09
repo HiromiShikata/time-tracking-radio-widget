@@ -23,7 +23,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.net.UnknownHostException
-import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
@@ -40,8 +39,8 @@ class WidgetWorkSchedulerTest {
     private val second = CellKey("project-b", ActivityKind.WORK)
     private lateinit var executor: ExecutorService
 
-    private fun acceptedTapAt(cell: CellKey): Instant =
-        WidgetController(context, publish = { _, _ -> }).acceptTap(cell, workEnqueued = true, workId = UUID.randomUUID()).tappedAt
+    private fun acceptedTapFor(cell: CellKey): QueuedTapAccept =
+        WidgetController(context, publish = { _, _ -> }).acceptQueued(cell)
 
     @Before
     fun setUp() {
@@ -62,8 +61,8 @@ class WidgetWorkSchedulerTest {
     }
 
     @Test
-    fun enqueueTapPlacesItsWorkUnderTheSelectionUniqueName() {
-        WidgetWorkScheduler.enqueueTap(context, first, acceptedTapAt(first), SelectionRequest.Select(first))
+    fun enqueueWorkRequestPlacesItsWorkUnderTheSelectionUniqueName() {
+        WidgetWorkScheduler.enqueueWorkRequest(context, acceptedTapFor(first).workRequest)
         meetConstraintsOnceQueued(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
         assertEquals(1, uniqueWorkInfos(context, WidgetSelectionWorker.UNIQUE_WORK_NAME).size)
     }
@@ -93,10 +92,10 @@ class WidgetWorkSchedulerTest {
         }
         WidgetSelectionWorker.controllerFactory = { WidgetController(it, { transport }, { transport }, publish = { _, _ -> }) }
         try {
-            WidgetWorkScheduler.enqueueTap(context, first, acceptedTapAt(first), SelectionRequest.Select(first))
+            WidgetWorkScheduler.enqueueWorkRequest(context, acceptedTapFor(first).workRequest)
             meetConstraintsOnceQueued(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
             assertTrue("the first tap's selection call started", started.await(30, TimeUnit.SECONDS))
-            WidgetWorkScheduler.enqueueTap(context, second, acceptedTapAt(second), SelectionRequest.Select(second))
+            WidgetWorkScheduler.enqueueWorkRequest(context, acceptedTapFor(second).workRequest)
             val queued = awaitUniqueWork(context, WidgetSelectionWorker.UNIQUE_WORK_NAME, "the second tap being queued") { it.size == 2 }
             meetAllConstraints(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
             assertEquals(setOf(WorkInfo.State.RUNNING, WorkInfo.State.BLOCKED), queued.map { it.state }.toSet())
@@ -125,10 +124,10 @@ class WidgetWorkSchedulerTest {
         WidgetSelectionWorker.controllerFactory = { WidgetController(it, { transport }, { transport }, publish = { _, _ -> }) }
         val ids: Set<UUID>
         try {
-            WidgetWorkScheduler.enqueueTap(context, first, acceptedTapAt(first), SelectionRequest.Select(first))
+            WidgetWorkScheduler.enqueueWorkRequest(context, acceptedTapFor(first).workRequest)
             meetConstraintsOnceQueued(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
             assertTrue("the first tap's selection call started", started.await(30, TimeUnit.SECONDS))
-            WidgetWorkScheduler.enqueueTap(context, second, acceptedTapAt(second), SelectionRequest.Select(second))
+            WidgetWorkScheduler.enqueueWorkRequest(context, acceptedTapFor(second).workRequest)
             val queued = awaitUniqueWork(context, WidgetSelectionWorker.UNIQUE_WORK_NAME, "the second tap being queued") { it.size == 2 }
             meetAllConstraints(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
             ids = queued.map { it.id }.toSet()

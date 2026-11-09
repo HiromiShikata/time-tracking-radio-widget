@@ -9,6 +9,7 @@ import android.widget.ImageView
 import android.widget.TextView
 import androidx.work.Configuration
 import androidx.work.Data
+import androidx.work.OneTimeWorkRequest
 import androidx.work.ListenableWorker
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
@@ -87,6 +88,9 @@ internal fun widgetSnapshots(context: Context) = KeyValueWidgetSnapshotRepositor
 
 internal fun widgetDiagnosticLog(context: Context) = KeyValueDiagnosticLogRepository(widgetPreferences(context))
 
+internal fun WidgetController.acceptQueued(cell: CellKey): QueuedTapAccept =
+    acceptQueuedTap(cell) { tappedAt, request -> WidgetWorkScheduler.buildTapRequest(cell, tappedAt, request) }
+
 internal fun installWorkManagerForTests(context: Context) {
     WorkManagerTestInitHelper.initializeTestWorkManager(context)
 }
@@ -123,7 +127,7 @@ internal fun awaitWorkFinished(context: Context, uniqueWorkName: String, timeout
     awaitUniqueWork(context, uniqueWorkName, "work finishing", timeoutMillis) { infos -> infos.all { it.state.isFinished } }
 }
 
-internal fun storedTapInput(context: Context, cell: CellKey, tappedAt: Instant, request: SelectionRequest): Data {
+internal fun storedTapInput(context: Context, workRequest: OneTimeWorkRequest): Data {
     val captured = AtomicReference<Data?>(null)
     val configuration = Configuration.Builder()
         .setExecutor(Executors.newSingleThreadExecutor { Thread(it, "widget-tap-input").apply { isDaemon = true } })
@@ -137,7 +141,7 @@ internal fun storedTapInput(context: Context, cell: CellKey, tappedAt: Instant, 
         })
         .build()
     WorkManagerTestInitHelper.initializeTestWorkManager(context, configuration)
-    WidgetWorkScheduler.enqueueTap(context, cell, tappedAt, request)
+    WidgetWorkScheduler.enqueueWorkRequest(context, workRequest)
     meetConstraintsOnceQueued(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
     val deadline = System.currentTimeMillis() + 30_000
     while (captured.get() == null) {
