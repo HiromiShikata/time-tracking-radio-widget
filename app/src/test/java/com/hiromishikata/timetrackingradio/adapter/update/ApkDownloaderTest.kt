@@ -102,6 +102,17 @@ class ApkDownloaderTest {
     }
 
     @Test
+    fun aStaleFileThatCannotBeDeletedDoesNotFailAVerifiedDownload() {
+        val updates = File(folder.root, "updates").apply { mkdirs() }
+        val undeletableStale = File(updates, "app-update-1.0.1.apk").apply { mkdirs() }
+        File(undeletableStale, "content.bin").writeBytes(byteArrayOf(5))
+        val downloaded = ApkDownloader(folder.root) { _ -> StreamResponse(200, ByteArrayInputStream(payload)) }
+            .download(url, payload.size.toLong(), SemanticVersion(1, 0, 3))
+        assertEquals("app-update-1.0.3.apk", downloaded.name)
+        assertArrayEquals(payload, downloaded.readBytes())
+    }
+
+    @Test
     fun aVerifiedApkOfTheSameVersionAndSizeIsReusedWithoutDownloading() {
         var opened = 0
         val downloader = ApkDownloader(folder.root) { _ ->
