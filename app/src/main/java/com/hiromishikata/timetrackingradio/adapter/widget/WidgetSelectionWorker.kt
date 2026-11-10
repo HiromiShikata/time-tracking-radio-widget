@@ -48,7 +48,7 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
 
     private suspend fun runSelection(): Result {
         val controller = controllerFactory(applicationContext)
-        var retryRequested = false
+        var completedNormally = false
         val result = try {
             val ownTap = requestedStampedTapOrNull()
             controller.dropFinishedWork(ownTap?.cell, ownTap?.tappedAt) { uniqueWorkInfos() }
@@ -59,12 +59,12 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
             }
             currentCoroutineContext().ensureActive()
             WidgetWorkScheduler.enqueueDiagnosticsUpload(applicationContext)
+            completedNormally = true
             Result.success()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (unavailable: NetworkUnavailableException) {
             logWidgetWorkFailure(unavailable)
-            retryRequested = true
             Result.retry()
         } catch (failure: Exception) {
             logWidgetWorkFailure(failure)
@@ -73,7 +73,7 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
             WidgetWorkScheduler.enqueueDiagnosticsUpload(applicationContext)
             Result.success()
         }
-        if (!retryRequested) runUpdateCheckTrigger()
+        if (completedNormally) runUpdateCheckTrigger()
         return result
     }
 
