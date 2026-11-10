@@ -68,7 +68,19 @@ The endpoint URL must start with `https://`. Project names must be non-empty and
 
 ## Updates
 
-Every 6 hours the app checks the latest GitHub release. A selection run that completes normally (a tap that was sent and answered, or a refresh that was read) also triggers a check when the last completed check is more than six hours old; that check runs as separate work after the selection finishes. A selection that is retried or fails does not trigger a check. When a newer version exists it posts a notification. Tapping the notification downloads the APK and starts the Android package installer. Releases are signed with the same key, so an update installs over the previous version. Every check's outcome (the decision, the latest version, whether notifications were permitted and a notification was posted, or the failure reason) is recorded in the diagnostic log and uploaded by the next diagnostics upload. The decision is one of four values: `up_to_date`, `newer_available`, `newer_without_apk` and `check_failed`. A release whose version is newer but has no APK is recorded with `decision=newer_without_apk` and is not announced, so no notification is posted for it.
+The app checks the latest GitHub release every 6 hours. Two more triggers start a check when the network is connected: a selection run that completes normally (a tap that was sent and answered, or a refresh that was read) when the last completed check is more than six hours old, and the settings screen opening, at most once a minute (the foreground check). A selection that is retried or fails does not trigger a check.
+
+When a newer release has an APK asset, the app downloads the APK in the background first. The download is written to a partial file, its size is compared with the size of the release asset, and only a file with the matching size is kept. The notification is posted only after that. Tapping the notification opens the Android install confirmation through a PackageInstaller session, so the owner only approves the install.
+
+The app uses two permissions. Notifications: on Android 13 and later the settings screen asks for them when it opens; without them no notification is posted. Install unknown apps: when it is off, the settings screen shows a guide and a button that opens this app's setting. Tapping the notification does not install anything while this permission is off; the app opens the setting instead.
+
+A failed download (a response that is not 2xx, a transport error, or a size mismatch) is retried by the next run and posts no notification.
+
+Every check is recorded in the diagnostic log as `update_check`, with the decision, the latest version, the download result, whether notifications were permitted, and whether a notification was posted. Every install step is recorded as `update_install` with its outcome: `session_committed`, `session_failed`, `pending_user_action`, `installed`, `failed`, `blocked_unknown_sources` or `missing_apk`. Entries are uploaded with the next diagnostics upload.
+
+The check decision is one of four values: `up_to_date`, `newer_available`, `newer_without_apk` and `check_failed`. A release whose version is newer but has no APK is recorded with `decision=newer_without_apk` and is not announced, so no notification is posted for it.
+
+Releases are signed with the same key, so an update installs over the previous version.
 
 ## Release signing
 

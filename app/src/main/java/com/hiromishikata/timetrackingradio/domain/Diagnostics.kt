@@ -23,6 +23,7 @@ enum class DiagnosticEventType(val code: String) {
     CONNECTION_CHECK("connection_check"),
     DIAGNOSTICS_UPLOAD("diagnostics_upload"),
     UPDATE_CHECK("update_check"),
+    UPDATE_INSTALL("update_install"),
 }
 
 data class DiagnosticEntry(

@@ -3,6 +3,7 @@ package com.hiromishikata.timetrackingradio.domain
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.longOrNull
 
 internal fun parseJsonObject(body: String): JsonObject {
     val element = try {
@@ -21,3 +22,10 @@ internal fun JsonObject.stringField(key: String): String {
 
 internal fun JsonObject.stringFieldOrNull(key: String): String? =
     (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
+
+internal fun JsonObject.longFieldOrNull(key: String): Long? {
+    val element = this[key] ?: return null
+    val primitive = element as? JsonPrimitive
+    if (primitive == null || primitive.isString) throw MalformedResponseException("$key is not a number")
+    return primitive.longOrNull ?: throw MalformedResponseException("$key is not a whole number")
+}

@@ -21,7 +21,10 @@
     <string name="problem_project_duplicated">Project names must be unique.</string>
     <string name="update_channel_name">App updates</string>
     <string name="update_available">Version %1$s is available. Tap to install.</string>
-    <string name="update_download_failed">Could not download the update.</string>
+    <string name="update_install_guide">To install updates, allow this app to install apps. Open the setting below, turn on "Allow from this source", then come back.</string>
+    <string name="update_install_button">Allow installing updates</string>
+    <string name="update_apk_missing">The downloaded update is missing. The next check downloads it again.</string>
+    <string name="update_install_failed">The update could not be installed.</string>
     <string name="cell_description_work">work cell</string>
     <string name="cell_description_meeting">meeting cell</string>
     <string name="connection_checking">Checking the connection…</string>

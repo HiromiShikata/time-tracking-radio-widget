@@ -29,6 +29,7 @@ class UpdateCheckWorker(context: Context, parameters: WorkerParameters) : Corout
         val endpointUrl = KeyValueWidgetSettingsRepository(store).read()?.endpointUrl.orEmpty()
         val useCase = UpdateCheckUseCase(
             releaseRepositoryFactory(),
+            ApkDownloader(applicationContext.cacheDir),
             UpdateNotifier(applicationContext),
             DiagnosticRecorder(KeyValueDiagnosticLogRepository(store), endpointKeySecrets(endpointUrl)) { Instant.now() },
             UpdateCheckScheduler.lastCheckRepository(applicationContext),

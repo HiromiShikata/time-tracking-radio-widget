@@ -6,14 +6,18 @@ import android.appwidget.AppWidgetManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.text.method.ScrollingMovementMethod
+import android.util.Log
+import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.app.ActivityCompat
+import androidx.core.net.toUri
 import com.hiromishikata.timetrackingradio.R
 import com.hiromishikata.timetrackingradio.adapter.http.DiagnosticHttpTransport
 import com.hiromishikata.timetrackingradio.adapter.http.DIAGNOSTICS_UPLOAD_TIMEOUT_MILLIS
@@ -25,10 +29,15 @@ import com.hiromishikata.timetrackingradio.adapter.store.KeyValueDiagnosticLogRe
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueWidgetSettingsRepository
 import com.hiromishikata.timetrackingradio.adapter.store.SETTINGS_PREFERENCES_NAME
 import com.hiromishikata.timetrackingradio.adapter.store.SharedPreferencesKeyValueStore
+import com.hiromishikata.timetrackingradio.adapter.update.UpdateCheckScheduler
+import com.hiromishikata.timetrackingradio.adapter.update.UpdateNotifier
+import com.hiromishikata.timetrackingradio.adapter.update.updateDiagnosticRecorder
 import com.hiromishikata.timetrackingradio.adapter.widget.SelectionWidgetProvider
 import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
 import com.hiromishikata.timetrackingradio.domain.ConnectionCheckResult
 import com.hiromishikata.timetrackingradio.domain.DiagnosticRecorder
+import com.hiromishikata.timetrackingradio.domain.UpdateSetupStep
+import com.hiromishikata.timetrackingradio.domain.updateSetupSteps
 import com.hiromishikata.timetrackingradio.domain.describeFailure
 import com.hiromishikata.timetrackingradio.domain.WidgetSettings
 import com.hiromishikata.timetrackingradio.domain.WidgetSettingsProblem
@@ -69,8 +78,41 @@ class SettingsActivity : Activity() {
         }
         findViewById<Button>(R.id.copy_log_button).setOnClickListener { copyLog() }
         findViewById<TextView>(R.id.log_text).movementMethod = ScrollingMovementMethod.getInstance()
+        findViewById<Button>(R.id.install_permission_button).setOnClickListener { openUnknownAppSourcesSettings() }
         renderLog()
-        requestNotificationPermissionIfNeeded()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            currentSetupSteps().contains(UpdateSetupStep.RequestNotificationPermission)
+        ) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        enqueueForegroundUpdateCheck()
+        val installStepVisibility = if (currentSetupSteps().contains(UpdateSetupStep.OpenUnknownAppSources)) View.VISIBLE else View.GONE
+        findViewById<TextView>(R.id.install_permission_guide).visibility = installStepVisibility
+        findViewById<Button>(R.id.install_permission_button).visibility = installStepVisibility
+    }
+
+    private fun enqueueForegroundUpdateCheck() {
+        try {
+            UpdateCheckScheduler.enqueueForegroundCheckIfDue(this, Instant.now())
+        } catch (failure: Exception) {
+            val detail = describeFailure(failure)
+            Log.e(TAG, "foreground update check was not enqueued: $detail")
+            updateDiagnosticRecorder(this).record(DiagnosticEventType.EXCEPTION, detail)
+        }
+    }
+
+    private fun currentSetupSteps(): List<UpdateSetupStep> = updateSetupSteps(
+        UpdateNotifier(this).notificationsPermitted(),
+        packageManager.canRequestPackageInstalls(),
+        Build.VERSION.SDK_INT,
+    )
+
+    private fun openUnknownAppSourcesSettings() {
+        startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:$packageName".toUri()))
     }
 
     private fun save(endpointUrl: String, projectsText: String) {
@@ -165,14 +207,9 @@ class SettingsActivity : Activity() {
         WidgetSettingsProblem.PROJECT_NAME_DUPLICATED -> R.string.problem_project_duplicated
     }
 
-    private fun requestNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
-        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
-        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
-    }
-
     companion object {
         private const val REQUEST_NOTIFICATIONS = 1
+        private const val TAG = "SettingsActivity"
 
         /** Replaceable by tests; production uses the platform HTTP transport and one background thread. */
         var transportFactory: () -> HttpTransport = { HttpUrlConnectionTransport() }
