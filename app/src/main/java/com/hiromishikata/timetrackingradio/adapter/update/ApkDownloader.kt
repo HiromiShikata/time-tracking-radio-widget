@@ -53,7 +53,6 @@ class ApkDownloader(
             writeResponse(url, partial)
             verifyDownloadedSize(partial.length(), expectedSizeBytes)
             Files.move(partial.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            return target
         } catch (failure: ApkDownloadException) {
             partial.delete()
             throw failure
@@ -61,6 +60,8 @@ class ApkDownloader(
             partial.delete()
             throw ApkDownloadException("download failed: $failure")
         }
+        removeStaleVersionedApks(updates, target)
+        return target
     }
 
     private fun writeResponse(url: String, partial: File) {
@@ -70,7 +71,18 @@ class ApkDownloader(
         }
     }
 
+    private fun removeStaleVersionedApks(updates: File, current: File) {
+        val stale = updates.listFiles { file ->
+            file.name.startsWith(APK_PREFIX) && file.name.endsWith(APK_SUFFIX) && file.name != current.name
+        }.orEmpty()
+        stale.forEach { file ->
+            if (!file.delete()) throw ApkDownloadException("could not delete stale update ${file.name}")
+        }
+    }
+
     private companion object {
         const val UPDATES_DIRECTORY = "updates"
+        const val APK_PREFIX = "app-update-"
+        const val APK_SUFFIX = ".apk"
     }
 }

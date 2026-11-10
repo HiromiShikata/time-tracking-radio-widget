@@ -5,6 +5,7 @@ import android.app.Activity
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.IntentSender
@@ -146,8 +147,16 @@ class UpdateInstallActivity : Activity() {
         }
         confirmation.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (resumed) {
-            startActivity(confirmation)
-            recorder.record(DiagnosticEventType.UPDATE_INSTALL, "outcome=pending_user_action, delivery=activity")
+            try {
+                startActivity(confirmation)
+                recorder.record(DiagnosticEventType.UPDATE_INSTALL, "outcome=pending_user_action, delivery=activity")
+            } catch (failure: ActivityNotFoundException) {
+                recorder.record(
+                    DiagnosticEventType.UPDATE_INSTALL,
+                    "outcome=failed, reason=no activity can handle the install confirmation",
+                )
+                finish()
+            }
         } else {
             if (postInstallConfirmationNotification(confirmation)) {
                 recorder.record(DiagnosticEventType.UPDATE_INSTALL, "outcome=pending_user_action, delivery=notification")
