@@ -7,6 +7,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.google.common.util.concurrent.ListenableFuture
+import com.hiromishikata.timetrackingradio.adapter.update.UpdateCheckScheduler
 import com.hiromishikata.timetrackingradio.domain.ActivityKind
 import com.hiromishikata.timetrackingradio.domain.CellKey
 import com.hiromishikata.timetrackingradio.domain.NetworkUnavailableException
@@ -55,6 +56,7 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
             }
             currentCoroutineContext().ensureActive()
             WidgetWorkScheduler.enqueueDiagnosticsUpload(applicationContext)
+            UpdateCheckScheduler.enqueueOnDemandIfStale(applicationContext, Instant.now())
             Result.success()
         } catch (cancelled: CancellationException) {
             throw cancelled

@@ -17,13 +17,18 @@ import com.hiromishikata.timetrackingradio.domain.SemanticVersion
 import com.hiromishikata.timetrackingradio.domain.UpdateAnnouncer
 
 class UpdateNotifier(private val context: Context) : UpdateAnnouncer {
-    override fun announce(version: SemanticVersion, apkDownloadUrl: String) {
+    override fun notificationsPermitted(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+
+    override fun announce(version: SemanticVersion, apkDownloadUrl: String): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         ) {
             Log.w(TAG, "notifications are not permitted; update $version was not announced")
-            return
+            return false
         }
         ensureChannel()
         val intent = Intent(context, UpdateInstallActivity::class.java)
@@ -42,6 +47,7 @@ class UpdateNotifier(private val context: Context) : UpdateAnnouncer {
             .setAutoCancel(true)
             .build()
         NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+        return true
     }
 
     private fun ensureChannel() {
