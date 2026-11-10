@@ -3,11 +3,14 @@ package com.hiromishikata.timetrackingradio.adapter.update
 import android.Manifest
 import android.app.Application
 import android.app.Notification
+import android.app.NotificationChannel
 import android.app.NotificationManager
+import com.hiromishikata.timetrackingradio.R
 import com.hiromishikata.timetrackingradio.TestApplication
 import com.hiromishikata.timetrackingradio.domain.SemanticVersion
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -34,7 +37,7 @@ class UpdateNotifierTest {
             "Version 1.0.2 is available. Tap to install.",
             notifications[0].extras.getCharSequence(Notification.EXTRA_TEXT).toString(),
         )
-        assertNotNull(manager.getNotificationChannel("app-updates"))
+        assertNotNull(manager.getNotificationChannel("app-update-available"))
     }
 
     @Test
@@ -87,6 +90,20 @@ class UpdateNotifierAndroid13Test {
         val started = shadowOf(notification.contentIntent).savedIntent
         assertEquals(UpdateInstallActivity::class.java.name, started.component!!.className)
         assertEquals(apk.absolutePath, started.getStringExtra(UpdateInstallActivity.EXTRA_APK_PATH))
+    }
+
+    @Test
+    fun theUpdateChannelIsRenamedAndTheOldOneIsDeleted() {
+        manager.createNotificationChannel(
+            NotificationChannel("app-updates", context.getString(R.string.update_channel_name), NotificationManager.IMPORTANCE_DEFAULT),
+        )
+        shadowOf(context as Application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        assertTrue(UpdateNotifier(context).announce(SemanticVersion(1, 0, 2), apk))
+        assertEquals(
+            NotificationManager.IMPORTANCE_HIGH,
+            manager.getNotificationChannel("app-update-available")?.importance,
+        )
+        assertNull(manager.getNotificationChannel("app-updates"))
     }
 }
 

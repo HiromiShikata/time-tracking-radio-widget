@@ -29,10 +29,12 @@ class UpdateCheckUseCaseTest {
         private val onDownload: (String, Long) -> File = { _, _ -> downloadedApk },
     ) : ApkDownloadRepository {
         val calls = mutableListOf<Pair<String, Long>>()
+        val versions = mutableListOf<SemanticVersion>()
 
-        override fun download(url: String, expectedSizeBytes: Long): File {
+        override fun download(url: String, expectedSizeBytes: Long, version: SemanticVersion): File {
             order.events += "download"
             calls += url to expectedSizeBytes
+            versions += version
             return onDownload(url, expectedSizeBytes)
         }
     }
@@ -301,6 +303,17 @@ class UpdateCheckUseCaseTest {
         assertEquals(listOf(SemanticVersion(1, 0, 2) to downloadedApk), announcer.announced)
         assertTrue(diagnostics.recorded.single().second.contains("download=ok"))
         assertEquals(checkedAt, lastChecked.read())
+    }
+
+    @Test
+    fun theAnnouncedVersionIsPassedToTheDownload() {
+        val downloads = FakeApkDownloads()
+        val status = useCase(
+            FakeReleaseRepository { LatestRelease(SemanticVersion(1, 0, 2), apkUrl, apkSize) },
+            downloads,
+        ).execute("1.0.1")
+        assertEquals(UpdateCheckStatus.COMPLETED, status)
+        assertEquals(listOf(SemanticVersion(1, 0, 2)), downloads.versions)
     }
 
     @Test
