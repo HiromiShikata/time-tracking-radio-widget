@@ -1,5 +1,6 @@
 package com.hiromishikata.timetrackingradio.adapter.update
 
+import android.util.Log
 import com.hiromishikata.timetrackingradio.domain.ApkDownloadException
 import com.hiromishikata.timetrackingradio.domain.ApkDownloadRepository
 import com.hiromishikata.timetrackingradio.domain.SemanticVersion
@@ -76,11 +77,12 @@ class ApkDownloader(
             file.name.startsWith(APK_PREFIX) && file.name.endsWith(APK_SUFFIX) && file.name != current.name
         }.orEmpty()
         stale.forEach { file ->
-            if (!file.delete()) throw ApkDownloadException("could not delete stale update ${file.name}")
+            if (!file.delete()) Log.w(TAG, "could not delete stale update ${file.name}")
         }
     }
 
     private companion object {
+        const val TAG = "ApkDownloader"
         const val UPDATES_DIRECTORY = "updates"
         const val APK_PREFIX = "app-update-"
         const val APK_SUFFIX = ".apk"
