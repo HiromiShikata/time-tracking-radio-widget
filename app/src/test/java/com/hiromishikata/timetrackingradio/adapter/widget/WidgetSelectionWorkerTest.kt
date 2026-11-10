@@ -553,6 +553,18 @@ class WidgetSelectionWorkerTest {
         }
     }
 
+    @Test
+    fun theUpdateCheckTriggerDoesNotRunAfterAGenericSelectionFailure() {
+        transport = EchoSelectionTransport { throw IllegalStateException("boom") }
+        val invocations = mutableListOf<Instant>()
+        WidgetSelectionWorker.updateCheckTrigger = { _, now -> invocations += now }
+        val result = runWorker(acceptedTapInput())
+        assertTrue("result=$result", result is ListenableWorker.Result.Success)
+        assertNull("the stored snapshot still holds the tap's ring", widgetSnapshots(context).read().sending)
+        assertNull("the last rendered screen still shows the tap's ring", rendered.last().sending)
+        assertEquals("the update-check trigger ran after a generic failure", 0, invocations.size)
+    }
+
     private fun resetWidgetState() {
         context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE).edit().clear().commit()
         KeyValueWidgetSettingsRepository(widgetPreferences(context)).write(WIDGET_TEST_SETTINGS)
