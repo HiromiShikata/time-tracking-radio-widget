@@ -16,6 +16,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueQueuedTapRepository
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueWidgetSettingsRepository
 import com.hiromishikata.timetrackingradio.adapter.store.SETTINGS_PREFERENCES_NAME
+import com.hiromishikata.timetrackingradio.adapter.update.UpdateCheckScheduler
 import com.hiromishikata.timetrackingradio.domain.ActivityKind
 import com.hiromishikata.timetrackingradio.domain.CellKey
 import com.hiromishikata.timetrackingradio.domain.Selection
@@ -67,6 +68,8 @@ class WidgetSelectionWorkerTest {
 
     private data class RunCase(val name: String, val input: Data, val expectedMethods: List<String>)
 
+    private val updateCheckOnceWorkName = "app-update-check-once"
+
     @Before
     fun setUp() {
         installWorkManagerForTests(context)
@@ -111,6 +114,27 @@ class WidgetSelectionWorkerTest {
             val stored = widgetSnapshots(context).read()
             assertNull("case=${case.name}", stored.sending)
             assertEquals("case=${case.name}", stored, rendered.last())
+        }
+    }
+
+    @Test
+    fun aSelectionRunEnqueuesAnUpdateCheckOnlyWhenTheLastCheckIsOlderThanSixHours() {
+        data class Case(val name: String, val lastCheckedAgo: Duration?, val expectEnqueued: Boolean)
+        val cases = listOf(
+            Case("no timestamp", null, true),
+            Case("seven hours old", Duration.ofHours(7), true),
+            Case("one hour old", Duration.ofHours(1), false),
+        )
+        cases.forEach { case ->
+            installWorkManagerForTests(context)
+            context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE).edit().clear().commit()
+            KeyValueWidgetSettingsRepository(widgetPreferences(context)).write(WIDGET_TEST_SETTINGS)
+            case.lastCheckedAgo?.let { UpdateCheckScheduler.lastCheckRepository(context).write(Instant.now().minus(it)) }
+            transport = EchoSelectionTransport()
+            val result = runWorker(Data.EMPTY)
+            assertTrue("case=${case.name} result=$result", result is ListenableWorker.Result.Success)
+            val enqueued = WorkManager.getInstance(context).getWorkInfosForUniqueWork(updateCheckOnceWorkName).get().isNotEmpty()
+            assertEquals("case=${case.name}", case.expectEnqueued, enqueued)
         }
     }
 
