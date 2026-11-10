@@ -32,6 +32,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowInstrumentation
 import org.robolectric.shadows.ShadowToast
 import java.io.File
 
@@ -86,10 +87,19 @@ class UpdateInstallActivityTest {
 
     @After
     fun tearDown() {
+        setActivityChecking(false)
         UpdateInstallActivity.ioDispatcher = Dispatchers.IO
         UpdateInstallActivity.mainDispatcher = Dispatchers.Main
         UpdateInstallActivity.sessionApiFactory = { PackageInstallerSessionApi(it) }
         UpdateInstallActivity.installAllowed = { context -> context.packageManager.canRequestPackageInstalls() }
+    }
+
+    private fun setActivityChecking(enabled: Boolean) {
+        val shadow = shadowOf(ShadowInstrumentation.getInstrumentation())
+        ShadowInstrumentation::class.java
+            .getDeclaredMethod("checkActivities", Boolean::class.javaPrimitiveType)
+            .apply { isAccessible = true }
+            .invoke(shadow, enabled)
     }
 
     private fun intentFor(apkPath: String?): Intent = Intent().apply {
@@ -188,6 +198,7 @@ class UpdateInstallActivityTest {
 
     @Test
     fun aConfirmationWithNoActivityToHandleItIsRecordedAndDoesNotCrash() {
+        setActivityChecking(true)
         val unresolvable = Intent("com.example.NO_SUCH_ACTIVITY")
         val controller = launchWithApk()
         val status = Intent(application, UpdateInstallActivity::class.java)
