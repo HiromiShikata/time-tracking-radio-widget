@@ -15,17 +15,19 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = TestApplication::class)
 class UpdateNotifierTest {
     private val context = RuntimeEnvironment.getApplication()
     private val manager = context.getSystemService(NotificationManager::class.java)
+    private val apk = File("updates/app-update.apk")
 
     @Test
     fun postsTheAnnouncementWhenNotificationsAreGranted() {
         shadowOf(context as Application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
-        UpdateNotifier(context).announce(SemanticVersion(1, 0, 2), "https://example.com/app.apk")
+        UpdateNotifier(context).announce(SemanticVersion(1, 0, 2), apk)
         val notifications = shadowOf(manager).allNotifications
         assertEquals(1, notifications.size)
         assertEquals(
@@ -37,7 +39,7 @@ class UpdateNotifierTest {
 
     @Test
     fun skipsTheAnnouncementWhenNotificationsAreDenied() {
-        UpdateNotifier(context).announce(SemanticVersion(1, 0, 2), "https://example.com/app.apk")
+        UpdateNotifier(context).announce(SemanticVersion(1, 0, 2), apk)
         assertTrue(shadowOf(manager).allNotifications.isEmpty())
     }
 }
@@ -47,6 +49,7 @@ class UpdateNotifierTest {
 class UpdateNotifierAndroid13Test {
     private val context = RuntimeEnvironment.getApplication()
     private val manager = context.getSystemService(NotificationManager::class.java)
+    private val apk = File("updates/app-update.apk")
 
     @Test
     fun theNotifierReportsPermissionAndPostingOnEachAndroidVersion() {
@@ -71,9 +74,19 @@ class UpdateNotifierAndroid13Test {
             }
             val notifier = UpdateNotifier(context)
             assertEquals(case.name, case.expectedPermitted, notifier.notificationsPermitted())
-            assertEquals(case.name, case.expectedAnnounced, notifier.announce(SemanticVersion(1, 0, 2), "https://example.com/app.apk"))
+            assertEquals(case.name, case.expectedAnnounced, notifier.announce(SemanticVersion(1, 0, 2), apk))
             assertEquals(case.name, case.expectedPosted, shadowOf(manager).allNotifications.size)
         }
+    }
+
+    @Test
+    fun theNotificationCarriesTheDownloadedApkPath() {
+        shadowOf(context as Application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        assertTrue(UpdateNotifier(context).announce(SemanticVersion(1, 0, 2), apk))
+        val notification = shadowOf(manager).allNotifications.single()
+        val started = shadowOf(notification.contentIntent).savedIntent
+        assertEquals(UpdateInstallActivity::class.java.name, started.component!!.className)
+        assertEquals(apk.absolutePath, started.getStringExtra(UpdateInstallActivity.EXTRA_APK_PATH))
     }
 }
 
@@ -82,6 +95,7 @@ class UpdateNotifierAndroid13Test {
 class UpdateNotifierBelowAndroid13Test {
     private val context = RuntimeEnvironment.getApplication()
     private val manager = context.getSystemService(NotificationManager::class.java)
+    private val apk = File("updates/app-update.apk")
 
     @Test
     fun theNotifierReportsPermissionAndPostingOnEachAndroidVersion() {
@@ -98,7 +112,7 @@ class UpdateNotifierBelowAndroid13Test {
             manager.cancelAll()
             val notifier = UpdateNotifier(context)
             assertEquals(case.name, case.expectedPermitted, notifier.notificationsPermitted())
-            assertEquals(case.name, case.expectedAnnounced, notifier.announce(SemanticVersion(1, 0, 2), "https://example.com/app.apk"))
+            assertEquals(case.name, case.expectedAnnounced, notifier.announce(SemanticVersion(1, 0, 2), apk))
             assertEquals(case.name, case.expectedPosted, shadowOf(manager).allNotifications.size)
         }
     }

@@ -11,13 +11,31 @@ class LatestReleaseParserTest {
         val withoutApk = """{"tag_name":"v1.0.8","assets":[{"name":"notes.txt","browser_download_url":"https://example.com/n.txt"}]}"""
         val withoutAssets = """{"tag_name":"v1.0.9"}"""
         val cases = listOf(
-            withApk to LatestRelease(SemanticVersion(1, 0, 7), "https://example.com/app.apk"),
-            withoutApk to LatestRelease(SemanticVersion(1, 0, 8), null),
-            withoutAssets to LatestRelease(SemanticVersion(1, 0, 9), null),
+            withApk to LatestRelease(SemanticVersion(1, 0, 7), "https://example.com/app.apk", null),
+            withoutApk to LatestRelease(SemanticVersion(1, 0, 8), null, null),
+            withoutAssets to LatestRelease(SemanticVersion(1, 0, 9), null, null),
         )
         cases.forEach { (body, expected) ->
             assertEquals("body=$body", expected, parseLatestRelease(body))
         }
+    }
+
+    @Test
+    fun theApkAssetSizeIsParsed() {
+        val body = """{"tag_name":"v1.0.7","assets":[{"name":"app-release.apk","browser_download_url":"https://example.com/app.apk","size":12345}]}"""
+        assertEquals(
+            LatestRelease(SemanticVersion(1, 0, 7), "https://example.com/app.apk", 12345L),
+            parseLatestRelease(body),
+        )
+    }
+
+    @Test
+    fun aMissingApkSizeIsNull() {
+        val body = """{"tag_name":"v1.0.7","assets":[{"name":"app-release.apk","browser_download_url":"https://example.com/app.apk"}]}"""
+        assertEquals(
+            LatestRelease(SemanticVersion(1, 0, 7), "https://example.com/app.apk", null),
+            parseLatestRelease(body),
+        )
     }
 
     @Test
