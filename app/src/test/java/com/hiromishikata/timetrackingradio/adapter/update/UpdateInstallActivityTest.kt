@@ -188,6 +188,7 @@ class UpdateInstallActivityTest {
 
     @Test
     fun aPendingStatusWhileInTheBackgroundPostsTheConfirmationNotification() {
+        shadowOf(application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
         val controller = launchWithApk().pause().stop()
         controller.newIntent(statusIntent(PackageInstaller.STATUS_PENDING_USER_ACTION))
         assertNull(shadowOf(controller.get()).nextStartedActivity)
@@ -197,6 +198,15 @@ class UpdateInstallActivityTest {
         assertEquals("app-update-install", notification.channelId)
         assertTrue(shadowOf(notification.contentIntent).savedIntent.filterEquals(confirmation))
         assertRecorded("outcome=pending_user_action", "delivery=notification")
+    }
+
+    @Test
+    fun aPendingStatusWhileInTheBackgroundWithoutNotificationPermissionPostsNothingAndRecordsIt() {
+        shadowOf(application).denyPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        val controller = launchWithApk().pause().stop()
+        controller.newIntent(statusIntent(PackageInstaller.STATUS_PENDING_USER_ACTION))
+        assertNull(shadowOf(manager).getNotification(null, UpdateInstallActivity.INSTALL_CONFIRMATION_NOTIFICATION_ID))
+        assertRecorded("outcome=failed", "reason=notification permission missing")
     }
 
     @Test
