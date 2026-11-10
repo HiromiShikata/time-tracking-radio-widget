@@ -1,16 +1,19 @@
 package com.hiromishikata.timetrackingradio.adapter.widget
 
 import android.content.Context
+import android.util.Log
 import androidx.work.ForegroundInfo
 import androidx.work.ListenableWorker
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.google.common.util.concurrent.ListenableFuture
+import com.hiromishikata.timetrackingradio.adapter.update.UpdateCheckScheduler
 import com.hiromishikata.timetrackingradio.domain.ActivityKind
 import com.hiromishikata.timetrackingradio.domain.CellKey
 import com.hiromishikata.timetrackingradio.domain.NetworkUnavailableException
 import com.hiromishikata.timetrackingradio.domain.SelectionRequest
+import com.hiromishikata.timetrackingradio.domain.describeFailure
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -45,7 +48,8 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
 
     private suspend fun runSelection(): Result {
         val controller = controllerFactory(applicationContext)
-        return try {
+        var completedNormally = false
+        val result = try {
             val ownTap = requestedStampedTapOrNull()
             controller.dropFinishedWork(ownTap?.cell, ownTap?.tappedAt) { uniqueWorkInfos() }
             when (val work = requestedWork()) {
@@ -55,6 +59,7 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
             }
             currentCoroutineContext().ensureActive()
             WidgetWorkScheduler.enqueueDiagnosticsUpload(applicationContext)
+            completedNormally = true
             Result.success()
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -67,6 +72,18 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
             currentCoroutineContext().ensureActive()
             WidgetWorkScheduler.enqueueDiagnosticsUpload(applicationContext)
             Result.success()
+        }
+        if (completedNormally) runUpdateCheckTrigger()
+        return result
+    }
+
+    private fun runUpdateCheckTrigger() {
+        try {
+            updateCheckTrigger(applicationContext, Instant.now())
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            Log.w(LOG_TAG, "update check trigger failed: ${describeFailure(failure)}")
         }
     }
 
@@ -110,8 +127,10 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
         const val KEY_REQUEST_KIND = "requestKind"
         const val REQUEST_KIND_SELECT = "select"
         const val REQUEST_KIND_CLEAR = "clear"
+        private const val LOG_TAG = "WidgetSelectionWorker"
 
         var controllerFactory: (Context) -> WidgetController = { WidgetController(it) }
+        var updateCheckTrigger: (Context, Instant) -> Unit = { context, now -> UpdateCheckScheduler.enqueueOnDemandIfStale(context, now) }
     }
 }
 

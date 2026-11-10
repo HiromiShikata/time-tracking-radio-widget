@@ -27,3 +27,9 @@ interface WidgetSettingsRepository {
 interface ReleaseRepository {
     fun readLatest(): LatestRelease
 }
+
+interface LastUpdateCheckRepository {
+    fun read(): Instant?
+
+    fun write(at: Instant)
+}

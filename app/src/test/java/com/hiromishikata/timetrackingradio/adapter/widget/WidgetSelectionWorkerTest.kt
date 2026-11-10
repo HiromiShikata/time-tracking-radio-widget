@@ -16,6 +16,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueQueuedTapRepository
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueWidgetSettingsRepository
 import com.hiromishikata.timetrackingradio.adapter.store.SETTINGS_PREFERENCES_NAME
+import com.hiromishikata.timetrackingradio.adapter.update.UpdateCheckScheduler
 import com.hiromishikata.timetrackingradio.domain.ActivityKind
 import com.hiromishikata.timetrackingradio.domain.CellKey
 import com.hiromishikata.timetrackingradio.domain.Selection
@@ -67,6 +68,9 @@ class WidgetSelectionWorkerTest {
 
     private data class RunCase(val name: String, val input: Data, val expectedMethods: List<String>)
 
+    private val updateCheckOnceWorkName = "app-update-check-once"
+    private val defaultUpdateCheckTrigger = WidgetSelectionWorker.updateCheckTrigger
+
     @Before
     fun setUp() {
         installWorkManagerForTests(context)
@@ -79,6 +83,7 @@ class WidgetSelectionWorkerTest {
     @After
     fun tearDown() {
         restoreDefaultWidgetFactories()
+        WidgetSelectionWorker.updateCheckTrigger = defaultUpdateCheckTrigger
     }
 
     private fun runWorker(input: Data): ListenableWorker.Result =
@@ -111,6 +116,27 @@ class WidgetSelectionWorkerTest {
             val stored = widgetSnapshots(context).read()
             assertNull("case=${case.name}", stored.sending)
             assertEquals("case=${case.name}", stored, rendered.last())
+        }
+    }
+
+    @Test
+    fun aSelectionRunEnqueuesAnUpdateCheckOnlyWhenTheLastCheckIsOlderThanSixHours() {
+        data class Case(val name: String, val lastCheckedAgo: Duration?, val expectEnqueued: Boolean)
+        val cases = listOf(
+            Case("no timestamp", null, true),
+            Case("seven hours old", Duration.ofHours(7), true),
+            Case("one hour old", Duration.ofHours(1), false),
+        )
+        cases.forEach { case ->
+            installWorkManagerForTests(context)
+            context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE).edit().clear().commit()
+            KeyValueWidgetSettingsRepository(widgetPreferences(context)).write(WIDGET_TEST_SETTINGS)
+            case.lastCheckedAgo?.let { UpdateCheckScheduler.lastCheckRepository(context).write(Instant.now().minus(it)) }
+            transport = EchoSelectionTransport()
+            val result = runWorker(Data.EMPTY)
+            assertTrue("case=${case.name} result=$result", result is ListenableWorker.Result.Success)
+            val enqueued = WorkManager.getInstance(context).getWorkInfosForUniqueWork(updateCheckOnceWorkName).get().isNotEmpty()
+            assertEquals("case=${case.name}", case.expectEnqueued, enqueued)
         }
     }
 
@@ -482,6 +508,61 @@ class WidgetSelectionWorkerTest {
         assertNull("the last render shows the ring of a tap older than 24 hours", last.sending)
         assertFalse("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
         assertFalse("the tapped cell still draws the sending ring", renderedCellDrawableResId(context, last, meeting) == R.drawable.cell_sending)
+    }
+
+    @Test
+    fun anUpdateCheckTriggerFailureNeverChangesTheTapOrTheResult() {
+        WidgetSelectionWorker.updateCheckTrigger = { _, _ -> throw IllegalStateException("enqueue failed") }
+        val result = runWorker(acceptedTapInput())
+        assertTrue("result=$result", result is ListenableWorker.Result.Success)
+        assertEquals("the selection was posted once", 1, transport.requests.count { it.method == "POST" })
+        assertEquals(Selection(meeting, since), widgetSnapshots(context).read().selection)
+        val last = rendered.last()
+        assertNull("the last rendered screen still shows a sending cell", last.sending)
+        assertFalse("the tapped cell still draws the sending ring", renderedCellDrawableResId(context, last, meeting) == R.drawable.cell_sending)
+    }
+
+    @Test
+    fun theUpdateCheckTriggerRunsAfterAFinishedSelection() {
+        data class Case(
+            val name: String,
+            val transport: HttpTransport,
+            val expectedResult: Class<out ListenableWorker.Result>,
+            val expectedInvocations: Int,
+        )
+        val cases = listOf(
+            Case("a finished selection", EchoSelectionTransport(), ListenableWorker.Result.Success::class.java, 1),
+            Case(
+                "a selection that asks for a retry",
+                FailingTapTransport(IOException("unexpected end of stream"), false),
+                ListenableWorker.Result.Retry::class.java,
+                0,
+            ),
+        )
+        cases.forEach { case ->
+            resetWidgetState()
+            rendered.clear()
+            val invocations = mutableListOf<Instant>()
+            WidgetSelectionWorker.updateCheckTrigger = { _, now -> invocations += now }
+            WidgetSelectionWorker.controllerFactory = {
+                WidgetController(it, { case.transport }, { EchoSelectionTransport() }, publish = { _, snapshot -> rendered += snapshot })
+            }
+            val result = runWorker(acceptedTapInput())
+            assertTrue("case=${case.name} result=$result", case.expectedResult.isInstance(result))
+            assertEquals("case=${case.name}", case.expectedInvocations, invocations.size)
+        }
+    }
+
+    @Test
+    fun theUpdateCheckTriggerDoesNotRunAfterAGenericSelectionFailure() {
+        transport = EchoSelectionTransport { throw IllegalStateException("boom") }
+        val invocations = mutableListOf<Instant>()
+        WidgetSelectionWorker.updateCheckTrigger = { _, now -> invocations += now }
+        val result = runWorker(acceptedTapInput())
+        assertTrue("result=$result", result is ListenableWorker.Result.Success)
+        assertNull("the stored snapshot still holds the tap's ring", widgetSnapshots(context).read().sending)
+        assertNull("the last rendered screen still shows the tap's ring", rendered.last().sending)
+        assertEquals("the update-check trigger ran after a generic failure", 0, invocations.size)
     }
 
     private fun resetWidgetState() {

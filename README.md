@@ -68,7 +68,7 @@ The endpoint URL must start with `https://`. Project names must be non-empty and
 
 ## Updates
 
-Every 6 hours the app checks the latest GitHub release. When a newer version exists it posts a notification. Tapping the notification downloads the APK and starts the Android package installer. Releases are signed with the same key, so an update installs over the previous version.
+Every 6 hours the app checks the latest GitHub release. A selection run that completes normally (a tap that was sent and answered, or a refresh that was read) also triggers a check when the last completed check is more than six hours old; that check runs as separate work after the selection finishes. A selection that is retried or fails does not trigger a check. When a newer version exists it posts a notification. Tapping the notification downloads the APK and starts the Android package installer. Releases are signed with the same key, so an update installs over the previous version. Every check's outcome (the decision, the latest version, whether notifications were permitted and a notification was posted, or the failure reason) is recorded in the diagnostic log and uploaded by the next diagnostics upload. The decision is one of four values: `up_to_date`, `newer_available`, `newer_without_apk` and `check_failed`. A release whose version is newer but has no APK is recorded with `decision=newer_without_apk` and is not announced, so no notification is posted for it.
 
 ## Release signing
 
