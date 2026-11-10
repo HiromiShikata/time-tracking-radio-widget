@@ -187,6 +187,19 @@ class UpdateInstallActivityTest {
     }
 
     @Test
+    fun aConfirmationWithNoActivityToHandleItIsRecordedAndDoesNotCrash() {
+        val unresolvable = Intent("com.example.NO_SUCH_ACTIVITY")
+        val controller = launchWithApk()
+        val status = Intent(application, UpdateInstallActivity::class.java)
+            .setAction(UpdateInstallActivity.ACTION_INSTALL_STATUS)
+            .putExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_PENDING_USER_ACTION)
+            .putExtra(Intent.EXTRA_INTENT, unresolvable)
+        controller.newIntent(status)
+        assertRecorded("outcome=failed", "reason=", "no activity")
+        assertTrue(controller.get().isFinishing)
+    }
+
+    @Test
     fun aPendingStatusWhileInTheBackgroundPostsTheConfirmationNotification() {
         shadowOf(application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
         val controller = launchWithApk().pause().stop()

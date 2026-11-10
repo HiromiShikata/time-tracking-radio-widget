@@ -78,6 +78,30 @@ class ApkDownloaderTest {
     }
 
     @Test
+    fun aVerifiedDownloadRemovesOtherVersionedApksAndKeepsTheCurrentOne() {
+        val updates = File(folder.root, "updates").apply { mkdirs() }
+        File(updates, "app-update-1.0.1.apk").writeBytes(byteArrayOf(5))
+        File(updates, "app-update-1.0.2.apk").writeBytes(byteArrayOf(6))
+        val downloaded = ApkDownloader(folder.root) { _ -> StreamResponse(200, ByteArrayInputStream(payload)) }
+            .download(url, payload.size.toLong(), SemanticVersion(1, 0, 3))
+        assertEquals("app-update-1.0.3.apk", downloaded.name)
+        assertEquals(listOf("app-update-1.0.3.apk"), updatesFiles().filter { it.startsWith("app-update-") && it.endsWith(".apk") })
+    }
+
+    @Test
+    fun aFailedDownloadKeepsOtherVersionedApks() {
+        val updates = File(folder.root, "updates").apply { mkdirs() }
+        File(updates, "app-update-1.0.1.apk").writeBytes(byteArrayOf(5))
+        File(updates, "app-update-1.0.2.apk").writeBytes(byteArrayOf(6))
+        val thrown = runCatching {
+            ApkDownloader(folder.root) { _ -> StreamResponse(503, ByteArrayInputStream(payload)) }
+                .download(url, payload.size.toLong(), SemanticVersion(1, 0, 3))
+        }.exceptionOrNull()
+        assertTrue("thrown=$thrown", thrown is ApkDownloadException)
+        assertEquals(listOf("app-update-1.0.1.apk", "app-update-1.0.2.apk"), updatesFiles())
+    }
+
+    @Test
     fun aVerifiedApkOfTheSameVersionAndSizeIsReusedWithoutDownloading() {
         var opened = 0
         val downloader = ApkDownloader(folder.root) { _ ->
