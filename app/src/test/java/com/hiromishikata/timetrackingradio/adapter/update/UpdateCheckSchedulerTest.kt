@@ -80,6 +80,19 @@ class UpdateCheckSchedulerTest {
         }
     }
 
+    @Test
+    fun aMalformedStoredTimeEnqueuesOnDemandCheck() {
+        freshWorkAndLastCheckState()
+        context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString("last_update_check_at", "not-a-time")
+            .commit()
+        UpdateCheckScheduler.enqueueOnDemandIfStale(context, now)
+        val infos = onDemandCheckInfos()
+        assertEquals(1, infos.size)
+        assertEquals(WorkInfo.State.ENQUEUED, infos.single().state)
+    }
+
     private companion object {
         const val ON_DEMAND_WORK_NAME = "app-update-check-once"
     }

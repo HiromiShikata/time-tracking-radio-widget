@@ -41,3 +41,65 @@ class UpdateNotifierTest {
         assertTrue(shadowOf(manager).allNotifications.isEmpty())
     }
 }
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33], application = TestApplication::class)
+class UpdateNotifierAndroid13Test {
+    private val context = RuntimeEnvironment.getApplication()
+    private val manager = context.getSystemService(NotificationManager::class.java)
+
+    @Test
+    fun theNotifierReportsPermissionAndPostingOnEachAndroidVersion() {
+        data class Case(
+            val name: String,
+            val granted: Boolean,
+            val expectedPermitted: Boolean,
+            val expectedAnnounced: Boolean,
+            val expectedPosted: Int,
+        )
+        val cases = listOf(
+            Case("permission granted", true, true, true, 1),
+            Case("permission denied", false, false, false, 0),
+        )
+        cases.forEach { case ->
+            manager.cancelAll()
+            val application = context as Application
+            if (case.granted) {
+                shadowOf(application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                shadowOf(application).denyPermissions(Manifest.permission.POST_NOTIFICATIONS)
+            }
+            val notifier = UpdateNotifier(context)
+            assertEquals(case.name, case.expectedPermitted, notifier.notificationsPermitted())
+            assertEquals(case.name, case.expectedAnnounced, notifier.announce(SemanticVersion(1, 0, 2), "https://example.com/app.apk"))
+            assertEquals(case.name, case.expectedPosted, shadowOf(manager).allNotifications.size)
+        }
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [32], application = TestApplication::class)
+class UpdateNotifierBelowAndroid13Test {
+    private val context = RuntimeEnvironment.getApplication()
+    private val manager = context.getSystemService(NotificationManager::class.java)
+
+    @Test
+    fun theNotifierReportsPermissionAndPostingOnEachAndroidVersion() {
+        data class Case(
+            val name: String,
+            val expectedPermitted: Boolean,
+            val expectedAnnounced: Boolean,
+            val expectedPosted: Int,
+        )
+        val cases = listOf(
+            Case("no runtime permission is needed below Android 13", true, true, 1),
+        )
+        cases.forEach { case ->
+            manager.cancelAll()
+            val notifier = UpdateNotifier(context)
+            assertEquals(case.name, case.expectedPermitted, notifier.notificationsPermitted())
+            assertEquals(case.name, case.expectedAnnounced, notifier.announce(SemanticVersion(1, 0, 2), "https://example.com/app.apk"))
+            assertEquals(case.name, case.expectedPosted, shadowOf(manager).allNotifications.size)
+        }
+    }
+}

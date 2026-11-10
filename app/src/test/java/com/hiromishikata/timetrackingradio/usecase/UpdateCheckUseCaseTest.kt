@@ -8,6 +8,7 @@ import com.hiromishikata.timetrackingradio.domain.LatestRelease
 import com.hiromishikata.timetrackingradio.domain.SemanticVersion
 import com.hiromishikata.timetrackingradio.domain.UpdateAnnouncer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
@@ -195,6 +196,50 @@ class UpdateCheckUseCaseTest {
                 .execute("1.0.1")
             assertEquals(case.name, case.expectedStatus, status)
             assertEquals(case.name, case.expectedStored, lastChecked.read())
+        }
+    }
+
+    private class ThrowingAnnouncer(private val failure: RuntimeException) : UpdateAnnouncer {
+        override fun notificationsPermitted(): Boolean = true
+
+        override fun announce(version: SemanticVersion, apkDownloadUrl: String): Boolean = throw failure
+    }
+
+    @Test
+    fun aNonCommunicationFailureIsRecordedAndNotRethrown() {
+        data class Case(
+            val name: String,
+            val release: () -> LatestRelease,
+            val announcer: UpdateAnnouncer,
+            val expectedDetailParts: List<String>,
+        )
+        val cases = listOf(
+            Case(
+                "release read throws",
+                { throw IllegalStateException("bad json") },
+                RecordingAnnouncer(),
+                listOf("decision=check_failed", "bad json"),
+            ),
+            Case(
+                "announce throws",
+                { LatestRelease(SemanticVersion(1, 0, 2), apkUrl) },
+                ThrowingAnnouncer(RuntimeException("notification failed")),
+                listOf("notified=false", "notification failed"),
+            ),
+        )
+        cases.forEach { case ->
+            val diagnostics = RecordingDiagnostics()
+            val lastChecked = InMemoryLastUpdateCheckRepository()
+            val status = UpdateCheckUseCase(FakeReleaseRepository(case.release), case.announcer, diagnostics, lastChecked) { checkedAt }
+                .execute("1.0.1")
+            assertEquals(case.name, UpdateCheckStatus.FAILED, status)
+            assertEquals(case.name, 1, diagnostics.recorded.size)
+            val (type, detail) = diagnostics.recorded.single()
+            assertEquals(case.name, DiagnosticEventType.UPDATE_CHECK, type)
+            case.expectedDetailParts.forEach { part ->
+                assertTrue("${case.name}: $detail", detail.contains(part))
+            }
+            assertNull(case.name, lastChecked.read())
         }
     }
 }
