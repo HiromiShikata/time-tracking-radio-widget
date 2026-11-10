@@ -27,23 +27,24 @@ class UpdateCheckUseCase(
             record(installedVersionName, LATEST_NONE, DECISION_CHECK_FAILED, "installed version is not x.y.z", permitted, false)
             return UpdateCheckStatus.FAILED
         }
-        val latest = try {
-            ReleaseReadUseCase(releases).execute()
+        return try {
+            val latest = ReleaseReadUseCase(releases).execute()
+            val latestText = "v${latest.version}"
+            val (decisionText, notified) = when (val decision = decideUpdate(installed, latest)) {
+                is UpdateDecision.Announce -> DECISION_NEWER_AVAILABLE to announcer.announce(decision.version, decision.apkDownloadUrl)
+                UpdateDecision.UpToDate -> DECISION_UP_TO_DATE to false
+                is UpdateDecision.NewerWithoutApk -> DECISION_NEWER_WITHOUT_APK to false
+            }
+            lastChecked.write(clock())
+            record(installedVersionName, latestText, decisionText, null, permitted, notified)
+            UpdateCheckStatus.COMPLETED
         } catch (failure: CommunicationFailedException) {
             record(installedVersionName, LATEST_NONE, DECISION_CHECK_FAILED, failure.message.orEmpty(), permitted, false)
-            return UpdateCheckStatus.RETRY
+            UpdateCheckStatus.RETRY
+        } catch (failure: Exception) {
+            record(installedVersionName, LATEST_NONE, DECISION_CHECK_FAILED, failure.message.orEmpty(), permitted, false)
+            UpdateCheckStatus.FAILED
         }
-        val latestText = "v${latest.version}"
-        when (val decision = decideUpdate(installed, latest)) {
-            is UpdateDecision.Announce -> {
-                val notified = announcer.announce(decision.version, decision.apkDownloadUrl)
-                record(installedVersionName, latestText, DECISION_NEWER_AVAILABLE, null, permitted, notified)
-            }
-            UpdateDecision.UpToDate -> record(installedVersionName, latestText, DECISION_UP_TO_DATE, null, permitted, false)
-            is UpdateDecision.NewerWithoutApk -> record(installedVersionName, latestText, DECISION_NEWER_WITHOUT_APK, null, permitted, false)
-        }
-        lastChecked.write(clock())
-        return UpdateCheckStatus.COMPLETED
     }
 
     private fun record(
