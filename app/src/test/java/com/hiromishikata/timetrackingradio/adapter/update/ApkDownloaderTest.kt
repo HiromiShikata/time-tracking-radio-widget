@@ -1,5 +1,6 @@
 package com.hiromishikata.timetrackingradio.adapter.update
 
+import com.hiromishikata.timetrackingradio.TestApplication
 import com.hiromishikata.timetrackingradio.domain.ApkDownloadException
 import com.hiromishikata.timetrackingradio.domain.SemanticVersion
 import org.junit.Assert.assertArrayEquals
@@ -8,10 +9,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34], application = TestApplication::class)
 class ApkDownloaderTest {
     @get:Rule
     val folder = TemporaryFolder()
