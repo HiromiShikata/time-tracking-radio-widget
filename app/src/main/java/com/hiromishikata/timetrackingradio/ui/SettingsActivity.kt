@@ -79,6 +79,7 @@ class SettingsActivity : Activity() {
         findViewById<Button>(R.id.copy_log_button).setOnClickListener { copyLog() }
         findViewById<TextView>(R.id.log_text).movementMethod = ScrollingMovementMethod.getInstance()
         findViewById<Button>(R.id.install_permission_button).setOnClickListener { openUnknownAppSourcesSettings() }
+        findViewById<Button>(R.id.update_notification_guide_button).setOnClickListener { openNotificationSettings() }
         renderLog()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             currentSetupSteps().contains(UpdateSetupStep.RequestNotificationPermission)
@@ -93,6 +94,9 @@ class SettingsActivity : Activity() {
         val installStepVisibility = if (currentSetupSteps().contains(UpdateSetupStep.OpenUnknownAppSources)) View.VISIBLE else View.GONE
         findViewById<TextView>(R.id.install_permission_guide).visibility = installStepVisibility
         findViewById<Button>(R.id.install_permission_button).visibility = installStepVisibility
+        val notificationStepVisibility =
+            if (currentSetupSteps().contains(UpdateSetupStep.RequestNotificationPermission)) View.VISIBLE else View.GONE
+        findViewById<Button>(R.id.update_notification_guide_button).visibility = notificationStepVisibility
     }
 
     private fun enqueueForegroundUpdateCheck() {
@@ -113,6 +117,10 @@ class SettingsActivity : Activity() {
 
     private fun openUnknownAppSourcesSettings() {
         startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:$packageName".toUri()))
+    }
+
+    private fun openNotificationSettings() {
+        startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
     }
 
     private fun save(endpointUrl: String, projectsText: String) {

@@ -54,6 +54,7 @@ class UpdateNotifier(private val context: Context) : UpdateAnnouncer {
 
     private fun ensureChannel() {
         val manager = context.getSystemService(NotificationManager::class.java)
+        manager.deleteNotificationChannel(LEGACY_CHANNEL_ID)
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL_ID, context.getString(R.string.update_channel_name), NotificationManager.IMPORTANCE_HIGH),
         )
@@ -61,7 +62,8 @@ class UpdateNotifier(private val context: Context) : UpdateAnnouncer {
 
     private companion object {
         const val TAG = "UpdateNotifier"
-        const val CHANNEL_ID = "app-updates"
+        const val LEGACY_CHANNEL_ID = "app-updates"
+        const val CHANNEL_ID = "app-update-available"
         const val NOTIFICATION_ID = 1
         const val REQUEST_CODE = 1
     }

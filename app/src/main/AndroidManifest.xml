@@ -30,15 +30,8 @@
         <activity
             android:name=".adapter.update.UpdateInstallActivity"
             android:excludeFromRecents="true"
+            android:launchMode="singleTop"
             android:exported="false" />
-
-        <receiver
-            android:name=".adapter.update.UpdateInstallStatusReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.hiromishikata.timetrackingradio.APK_INSTALL_STATUS" />
-            </intent-filter>
-        </receiver>
 
         <receiver
             android:name=".adapter.widget.SelectionWidgetProvider"

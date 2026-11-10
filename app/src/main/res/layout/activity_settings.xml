@@ -114,6 +114,19 @@
             android:textStyle="bold"
             android:visibility="gone" />
 
+        <Button
+            android:id="@+id/update_notification_guide_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/input_frame"
+            android:text="@string/update_notification_guide_button"
+            android:textAllCaps="false"
+            android:textColor="@color/white"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/connection_status"
             android:layout_width="match_parent"

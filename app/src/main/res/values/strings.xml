@@ -25,6 +25,10 @@
     <string name="update_install_button">Allow installing updates</string>
     <string name="update_apk_missing">The downloaded update is missing. The next check downloads it again.</string>
     <string name="update_install_failed">The update could not be installed.</string>
+    <string name="update_notification_guide_button">Open notification settings</string>
+    <string name="update_install_channel_name">Update installation</string>
+    <string name="update_install_confirmation_title">Confirm the app update</string>
+    <string name="update_install_confirmation_text">Tap to finish installing the update.</string>
     <string name="cell_description_work">work cell</string>
     <string name="cell_description_meeting">meeting cell</string>
     <string name="connection_checking">Checking the connection…</string>

@@ -3,7 +3,7 @@ package com.hiromishikata.timetrackingradio.domain
 import java.io.File
 
 interface ApkDownloadRepository {
-    fun download(url: String, expectedSizeBytes: Long): File
+    fun download(url: String, expectedSizeBytes: Long, version: SemanticVersion): File
 }
 
 class ApkDownloadException(message: String) : RuntimeException(message)

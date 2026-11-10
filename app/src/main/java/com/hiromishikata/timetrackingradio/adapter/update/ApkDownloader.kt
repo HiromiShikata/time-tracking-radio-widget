@@ -2,6 +2,7 @@ package com.hiromishikata.timetrackingradio.adapter.update
 
 import com.hiromishikata.timetrackingradio.domain.ApkDownloadException
 import com.hiromishikata.timetrackingradio.domain.ApkDownloadRepository
+import com.hiromishikata.timetrackingradio.domain.SemanticVersion
 import com.hiromishikata.timetrackingradio.domain.verifyDownloadedSize
 import java.io.ByteArrayInputStream
 import java.io.Closeable
@@ -42,10 +43,11 @@ class ApkDownloader(
     private val cacheDirectory: File,
     private val opener: StreamOpener = HttpUrlStreamOpener,
 ) : ApkDownloadRepository {
-    override fun download(url: String, expectedSizeBytes: Long): File {
+    override fun download(url: String, expectedSizeBytes: Long, version: SemanticVersion): File {
         val updates = File(cacheDirectory, UPDATES_DIRECTORY)
-        val partial = File(updates, PARTIAL_FILE_NAME)
-        val target = File(updates, APK_FILE_NAME)
+        val target = File(updates, "app-update-$version.apk")
+        if (target.isFile && target.length() == expectedSizeBytes) return target
+        val partial = File(updates, "${target.name}.part")
         try {
             updates.mkdirs()
             writeResponse(url, partial)
@@ -53,10 +55,10 @@ class ApkDownloader(
             Files.move(partial.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
             return target
         } catch (failure: ApkDownloadException) {
-            discard(partial, target)
+            partial.delete()
             throw failure
         } catch (failure: Exception) {
-            discard(partial, target)
+            partial.delete()
             throw ApkDownloadException("download failed: $failure")
         }
     }
@@ -68,14 +70,7 @@ class ApkDownloader(
         }
     }
 
-    private fun discard(partial: File, target: File) {
-        partial.delete()
-        target.delete()
-    }
-
     private companion object {
         const val UPDATES_DIRECTORY = "updates"
-        const val PARTIAL_FILE_NAME = "app-update.apk.part"
-        const val APK_FILE_NAME = "app-update.apk"
     }
 }
