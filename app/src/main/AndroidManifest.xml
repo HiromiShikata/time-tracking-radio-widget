@@ -30,6 +30,7 @@
         <activity
             android:name=".adapter.update.UpdateInstallActivity"
             android:excludeFromRecents="true"
+            android:launchMode="singleTop"
             android:exported="false" />
 
         <receiver

@@ -93,7 +93,29 @@ class UpdateCheckSchedulerTest {
         assertEquals(WorkInfo.State.ENQUEUED, infos.single().state)
     }
 
+    @Test
+    fun aForegroundCheckIsThrottledToOneMinute() {
+        data class Case(val name: String, val lastCheckedAt: Instant?, val expectedEnqueued: Boolean)
+        val cases = listOf(
+            Case("no stored instant", null, true),
+            Case("30 seconds ago", now.minusSeconds(30), false),
+            Case("60 seconds ago", now.minusSeconds(60), true),
+        )
+        cases.forEach { case ->
+            freshWorkAndLastCheckState()
+            val preferences = context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE)
+            case.lastCheckedAt?.let { preferences.edit().putString(FOREGROUND_KEY, it.toString()).commit() }
+            UpdateCheckScheduler.enqueueForegroundCheckIfDue(context, now)
+            val infos = WorkManager.getInstance(context).getWorkInfosForUniqueWork(FOREGROUND_WORK_NAME).get()
+            assertEquals(case.name, if (case.expectedEnqueued) 1 else 0, infos.size)
+            val expectedStored = if (case.expectedEnqueued) now else case.lastCheckedAt
+            assertEquals(case.name, expectedStored?.toString(), preferences.getString(FOREGROUND_KEY, null))
+        }
+    }
+
     private companion object {
         const val ON_DEMAND_WORK_NAME = "app-update-check-once"
+        const val FOREGROUND_WORK_NAME = "app-update-check-foreground"
+        const val FOREGROUND_KEY = "last_foreground_update_check_at"
     }
 }

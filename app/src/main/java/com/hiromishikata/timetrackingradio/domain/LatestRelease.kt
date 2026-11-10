@@ -3,7 +3,7 @@ package com.hiromishikata.timetrackingradio.domain
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 
-data class LatestRelease(val version: SemanticVersion, val apkDownloadUrl: String?)
+data class LatestRelease(val version: SemanticVersion, val apkDownloadUrl: String?, val apkSizeBytes: Long?)
 
 fun parseLatestRelease(body: String): LatestRelease {
     val root = parseJsonObject(body)
@@ -13,5 +13,9 @@ fun parseLatestRelease(body: String): LatestRelease {
     val apkAsset = assets
         .map { it as? JsonObject ?: throw MalformedResponseException("asset is not an object") }
         .firstOrNull { it.stringFieldOrNull("name")?.endsWith(".apk") == true }
-    return LatestRelease(version, apkAsset?.stringField("browser_download_url"))
+    return LatestRelease(
+        version,
+        apkAsset?.stringField("browser_download_url"),
+        apkAsset?.longFieldOrNull("size"),
+    )
 }

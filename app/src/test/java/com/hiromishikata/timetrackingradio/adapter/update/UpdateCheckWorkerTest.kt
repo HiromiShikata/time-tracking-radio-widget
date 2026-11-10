@@ -48,7 +48,7 @@ class UpdateCheckWorkerTest {
     @Test
     fun aCheckThatFindsNothingNewerSucceeds() {
         val repository = object : ReleaseRepository {
-            override fun readLatest(): LatestRelease = LatestRelease(SemanticVersion(0, 0, 0), null)
+            override fun readLatest(): LatestRelease = LatestRelease(SemanticVersion(0, 0, 0), null, null)
         }
         assertTrue(runWorkerWith(repository) is ListenableWorker.Result.Success)
     }
@@ -56,7 +56,7 @@ class UpdateCheckWorkerTest {
     @Test
     fun aCheckWritesItsOutcomeToTheDiagnosticLog() {
         val repository = object : ReleaseRepository {
-            override fun readLatest(): LatestRelease = LatestRelease(SemanticVersion(0, 0, 0), null)
+            override fun readLatest(): LatestRelease = LatestRelease(SemanticVersion(0, 0, 0), null, null)
         }
         runWorkerWith(repository)
         val entries = KeyValueDiagnosticLogRepository(widgetPreferences(context)).readAll()

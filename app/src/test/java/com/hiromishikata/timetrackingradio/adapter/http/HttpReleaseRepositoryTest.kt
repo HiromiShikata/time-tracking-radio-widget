@@ -16,7 +16,7 @@ class HttpReleaseRepositoryTest {
     fun readsTheLatestReleaseWithAGetRequest() {
         val transport = FakeHttpTransport(ArrayDeque(listOf({ HttpResponse(200, null, validBody) })))
         val release = HttpReleaseRepository(url, transport).readLatest()
-        assertEquals(LatestRelease(SemanticVersion(1, 0, 7), "https://example.com/app.apk"), release)
+        assertEquals(LatestRelease(SemanticVersion(1, 0, 7), "https://example.com/app.apk", null), release)
         assertEquals(listOf(HttpRequest("GET", url, null)), transport.requests)
     }
 

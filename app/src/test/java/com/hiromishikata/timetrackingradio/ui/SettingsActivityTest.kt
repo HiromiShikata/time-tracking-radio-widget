@@ -1,11 +1,15 @@
 package com.hiromishikata.timetrackingradio.ui
 
+import android.Manifest
 import android.app.Activity
+import android.app.Application
 import android.appwidget.AppWidgetManager
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Looper
+import android.provider.Settings
+import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
@@ -123,5 +127,46 @@ class SettingsActivityTest {
         assertEquals(expected, activity.findViewById<TextView>(R.id.log_text).text.toString())
         activity.findViewById<Button>(R.id.copy_log_button).performClick()
         assertEquals(expected, context.getSystemService(ClipboardManager::class.java).primaryClip!!.getItemAt(0).text.toString())
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33], application = TestApplication::class)
+class SettingsNotificationGuideTest {
+    private val application = RuntimeEnvironment.getApplication() as Application
+
+    private fun launch(): SettingsActivity =
+        Robolectric.buildActivity(SettingsActivity::class.java, Intent(application, SettingsActivity::class.java)).setup().get()
+
+    @Test
+    fun aNotificationGuideOpensTheAppNotificationSettingsWhenPermissionIsMissing() {
+        shadowOf(application).denyPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        val activity = launch()
+        val guide = activity.findViewById<Button>(R.id.update_notification_guide_button)
+        assertEquals(View.VISIBLE, guide.visibility)
+        guide.performClick()
+        val started = shadowOf(activity).nextStartedActivity
+        assertEquals(Settings.ACTION_APP_NOTIFICATION_SETTINGS, started.action)
+        assertEquals(application.packageName, started.getStringExtra(Settings.EXTRA_APP_PACKAGE))
+    }
+
+    @Test
+    fun theNotificationGuideIsHiddenWhenPermissionIsGranted() {
+        shadowOf(application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        val activity = launch()
+        assertEquals(View.GONE, activity.findViewById<Button>(R.id.update_notification_guide_button).visibility)
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [32], application = TestApplication::class)
+class SettingsNotificationGuideBelowAndroid13Test {
+    @Test
+    fun theNotificationGuideIsHiddenBelowAndroid13() {
+        val activity = Robolectric.buildActivity(
+            SettingsActivity::class.java,
+            Intent(RuntimeEnvironment.getApplication(), SettingsActivity::class.java),
+        ).setup().get()
+        assertEquals(View.GONE, activity.findViewById<Button>(R.id.update_notification_guide_button).visibility)
     }
 }

@@ -15,6 +15,7 @@ import androidx.core.content.ContextCompat
 import com.hiromishikata.timetrackingradio.R
 import com.hiromishikata.timetrackingradio.domain.SemanticVersion
 import com.hiromishikata.timetrackingradio.domain.UpdateAnnouncer
+import java.io.File
 
 class UpdateNotifier(private val context: Context) : UpdateAnnouncer {
     override fun notificationsPermitted(): Boolean =
@@ -22,7 +23,7 @@ class UpdateNotifier(private val context: Context) : UpdateAnnouncer {
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
 
-    override fun announce(version: SemanticVersion, apkDownloadUrl: String): Boolean {
+    override fun announce(version: SemanticVersion, apk: File): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
@@ -32,7 +33,7 @@ class UpdateNotifier(private val context: Context) : UpdateAnnouncer {
         }
         ensureChannel()
         val intent = Intent(context, UpdateInstallActivity::class.java)
-            .putExtra(UpdateInstallActivity.EXTRA_APK_URL, apkDownloadUrl)
+            .putExtra(UpdateInstallActivity.EXTRA_APK_PATH, apk.absolutePath)
         val pending = PendingIntent.getActivity(
             context,
             REQUEST_CODE,
@@ -44,6 +45,7 @@ class UpdateNotifier(private val context: Context) : UpdateAnnouncer {
             .setContentTitle(context.getString(R.string.update_channel_name))
             .setContentText(context.getString(R.string.update_available, version.toString()))
             .setContentIntent(pending)
+            .setOngoing(false)
             .setAutoCancel(true)
             .build()
         NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
@@ -52,14 +54,16 @@ class UpdateNotifier(private val context: Context) : UpdateAnnouncer {
 
     private fun ensureChannel() {
         val manager = context.getSystemService(NotificationManager::class.java)
+        manager.deleteNotificationChannel(LEGACY_CHANNEL_ID)
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, context.getString(R.string.update_channel_name), NotificationManager.IMPORTANCE_DEFAULT),
+            NotificationChannel(CHANNEL_ID, context.getString(R.string.update_channel_name), NotificationManager.IMPORTANCE_HIGH),
         )
     }
 
     private companion object {
         const val TAG = "UpdateNotifier"
-        const val CHANNEL_ID = "app-updates"
+        const val LEGACY_CHANNEL_ID = "app-updates"
+        const val CHANNEL_ID = "app-update-available"
         const val NOTIFICATION_ID = 1
         const val REQUEST_CODE = 1
     }

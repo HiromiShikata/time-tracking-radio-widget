@@ -21,7 +21,14 @@
     <string name="problem_project_duplicated">プロジェクト名が重複しています。</string>
     <string name="update_channel_name">アプリの更新</string>
     <string name="update_available">バージョン %1$s があります。タップしてインストールします。</string>
-    <string name="update_download_failed">アップデートをダウンロードできませんでした。</string>
+    <string name="update_install_guide">アップデートをインストールするには、このアプリによる不明なアプリのインストールを許可してください。下の設定を開き、「この提供元を許可」をオンにしてから戻ってください。</string>
+    <string name="update_install_button">アップデートのインストールを許可</string>
+    <string name="update_apk_missing">ダウンロードしたアップデートが見つかりません。次の確認でダウンロードし直します。</string>
+    <string name="update_install_failed">アップデートをインストールできませんでした。</string>
+    <string name="update_notification_guide_button">通知の設定を開く</string>
+    <string name="update_install_channel_name">アップデートのインストール</string>
+    <string name="update_install_confirmation_title">アプリのアップデートを確認してください</string>
+    <string name="update_install_confirmation_text">タップしてアップデートのインストールを完了します。</string>
     <string name="cell_description_work">work の欄</string>
     <string name="cell_description_meeting">meeting の欄</string>
     <string name="connection_checking">接続を確認しています…</string>

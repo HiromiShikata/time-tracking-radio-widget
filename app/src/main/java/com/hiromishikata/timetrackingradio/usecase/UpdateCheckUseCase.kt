@@ -1,5 +1,7 @@
 package com.hiromishikata.timetrackingradio.usecase
 
+import com.hiromishikata.timetrackingradio.domain.ApkDownloadException
+import com.hiromishikata.timetrackingradio.domain.ApkDownloadRepository
 import com.hiromishikata.timetrackingradio.domain.CommunicationFailedException
 import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
 import com.hiromishikata.timetrackingradio.domain.DiagnosticSink
@@ -15,6 +17,7 @@ enum class UpdateCheckStatus { COMPLETED, RETRY, FAILED }
 
 class UpdateCheckUseCase(
     private val releases: ReleaseRepository,
+    private val downloads: ApkDownloadRepository,
     private val announcer: UpdateAnnouncer,
     private val diagnostics: DiagnosticSink,
     private val lastChecked: LastUpdateCheckRepository,
@@ -24,33 +27,68 @@ class UpdateCheckUseCase(
         val permitted = announcer.notificationsPermitted()
         val installed = parseSemanticVersion(installedVersionName)
         if (installed == null) {
-            record(installedVersionName, LATEST_NONE, DECISION_CHECK_FAILED, "installed version is not x.y.z", permitted, false)
+            recordCheck(installedVersionName, LATEST_NONE, DECISION_CHECK_FAILED, DOWNLOAD_NONE, "installed version is not x.y.z", permitted, false)
             return UpdateCheckStatus.FAILED
         }
         return try {
             val latest = ReleaseReadUseCase(releases).execute()
             val latestText = "v${latest.version}"
-            val (decisionText, notified) = when (val decision = decideUpdate(installed, latest)) {
-                is UpdateDecision.Announce -> DECISION_NEWER_AVAILABLE to announcer.announce(decision.version, decision.apkDownloadUrl)
-                UpdateDecision.UpToDate -> DECISION_UP_TO_DATE to false
-                is UpdateDecision.NewerWithoutApk -> DECISION_NEWER_WITHOUT_APK to false
+            when (val decision = decideUpdate(installed, latest)) {
+                is UpdateDecision.Announce -> announceNewer(installedVersionName, latestText, decision, permitted)
+                UpdateDecision.UpToDate -> complete(installedVersionName, latestText, DECISION_UP_TO_DATE, DOWNLOAD_NONE, permitted, false)
+                is UpdateDecision.NewerWithoutApk -> complete(installedVersionName, latestText, DECISION_NEWER_WITHOUT_APK, DOWNLOAD_NONE, permitted, false)
             }
-            lastChecked.write(clock())
-            record(installedVersionName, latestText, decisionText, null, permitted, notified)
-            UpdateCheckStatus.COMPLETED
         } catch (failure: CommunicationFailedException) {
-            record(installedVersionName, LATEST_NONE, DECISION_CHECK_FAILED, failure.message.orEmpty(), permitted, false)
+            recordCheck(installedVersionName, LATEST_NONE, DECISION_CHECK_FAILED, DOWNLOAD_NONE, failure.message.orEmpty(), permitted, false)
             UpdateCheckStatus.RETRY
         } catch (failure: Exception) {
-            record(installedVersionName, LATEST_NONE, DECISION_CHECK_FAILED, failure.message.orEmpty(), permitted, false)
+            recordCheck(installedVersionName, LATEST_NONE, DECISION_CHECK_FAILED, DOWNLOAD_NONE, failure.message.orEmpty(), permitted, false)
             UpdateCheckStatus.FAILED
         }
     }
 
-    private fun record(
+    private fun announceNewer(
+        installedName: String,
+        latestText: String,
+        decision: UpdateDecision.Announce,
+        permitted: Boolean,
+    ): UpdateCheckStatus {
+        if (!permitted) {
+            return complete(installedName, latestText, DECISION_NEWER_AVAILABLE, DOWNLOAD_SKIPPED, permitted, false)
+        }
+        val apk = try {
+            downloads.download(decision.apkDownloadUrl, decision.apkSizeBytes, decision.version)
+        } catch (failure: ApkDownloadException) {
+            recordCheck(installedName, latestText, DECISION_NEWER_AVAILABLE, DOWNLOAD_FAILED, failure.message.orEmpty(), permitted, false)
+            return UpdateCheckStatus.RETRY
+        }
+        val notified = try {
+            announcer.announce(decision.version, apk)
+        } catch (failure: Exception) {
+            recordCheck(installedName, latestText, DECISION_NEWER_AVAILABLE, DOWNLOAD_OK, failure.message.orEmpty(), permitted, false)
+            return UpdateCheckStatus.FAILED
+        }
+        return complete(installedName, latestText, DECISION_NEWER_AVAILABLE, DOWNLOAD_OK, permitted, notified)
+    }
+
+    private fun complete(
+        installedName: String,
+        latestText: String,
+        decision: String,
+        download: String,
+        permitted: Boolean,
+        notified: Boolean,
+    ): UpdateCheckStatus {
+        lastChecked.write(clock())
+        recordCheck(installedName, latestText, decision, download, null, permitted, notified)
+        return UpdateCheckStatus.COMPLETED
+    }
+
+    private fun recordCheck(
         installedName: String,
         latest: String,
         decision: String,
+        download: String,
         reason: String?,
         permitted: Boolean,
         notified: Boolean,
@@ -58,7 +96,7 @@ class UpdateCheckUseCase(
         val reasonPart = reason?.let { "reason=$it, " }.orEmpty()
         diagnostics.record(
             DiagnosticEventType.UPDATE_CHECK,
-            "installed=$installedName, latest=$latest, decision=$decision, $reasonPart" +
+            "installed=$installedName, latest=$latest, decision=$decision, download=$download, $reasonPart" +
                 "notifications_permitted=$permitted, notified=$notified",
         )
     }
@@ -69,5 +107,9 @@ class UpdateCheckUseCase(
         const val DECISION_NEWER_AVAILABLE = "newer_available"
         const val DECISION_NEWER_WITHOUT_APK = "newer_without_apk"
         const val DECISION_UP_TO_DATE = "up_to_date"
+        const val DOWNLOAD_NONE = "none"
+        const val DOWNLOAD_SKIPPED = "skipped"
+        const val DOWNLOAD_OK = "ok"
+        const val DOWNLOAD_FAILED = "failed"
     }
 }
