@@ -16,17 +16,31 @@ fun readDeviceNetworkState(context: Context): NetworkState {
     } else {
         null
     }
-    return NetworkState(
+    return networkStateOf(
         activeNetwork = active != null,
-        transports = capabilities?.let { transportNames(it) }.orEmpty(),
+        hasTransport = { transport -> capabilities?.hasTransport(transport) == true },
         validated = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED),
-        metered = capabilities?.let { !it.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) },
+        notMetered = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED),
         backgroundRestricted = backgroundRestricted,
         dataSaverEnabled = connectivity.restrictBackgroundStatus == ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED,
     )
 }
 
-private fun transportNames(capabilities: NetworkCapabilities): List<String> = transportNamesOf(capabilities::hasTransport)
+internal fun networkStateOf(
+    activeNetwork: Boolean,
+    hasTransport: (Int) -> Boolean,
+    validated: Boolean?,
+    notMetered: Boolean?,
+    backgroundRestricted: Boolean?,
+    dataSaverEnabled: Boolean?,
+): NetworkState = NetworkState(
+    activeNetwork = activeNetwork,
+    transports = if (activeNetwork) transportNamesOf(hasTransport) else emptyList(),
+    validated = validated,
+    metered = notMetered?.not(),
+    backgroundRestricted = backgroundRestricted,
+    dataSaverEnabled = dataSaverEnabled,
+)
 
 internal fun transportNamesOf(hasTransport: (Int) -> Boolean): List<String> = KNOWN_TRANSPORTS
     .filter { (transport, _) -> hasTransport(transport) }
