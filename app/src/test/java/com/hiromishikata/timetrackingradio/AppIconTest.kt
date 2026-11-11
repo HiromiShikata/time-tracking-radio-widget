@@ -69,7 +69,6 @@ class AppIconTest {
         assertEquals(Color.BLACK, (icon.background as ColorDrawable).color)
         val pixels = render(icon.foreground, LAUNCHER_SIZE)
         assertWhiteOnly(pixels)
-        // 2x2 grid of rings centred at (39,39), (69,39), (39,69), (69,69); only the top-left one holds a dot.
         assertEquals("top-left centre dot", Color.WHITE, pixels.getPixel(39, 39))
         assertEquals("top-left ring", Color.WHITE, pixels.getPixel(39, 30))
         assertEquals("top-left gap between dot and ring", 0, Color.alpha(pixels.getPixel(39, 33)))
@@ -100,7 +99,6 @@ class AppIconTest {
         assertNotNull(drawable)
         val pixels = render(drawable!!, NOTIFICATION_SIZE)
         assertWhiteOnly(pixels)
-        // Viewport 53 units rendered at 96px: ring centres at about (21,21), (75,21), (21,75), (75,75).
         assertEquals("top-left centre dot", Color.WHITE, pixels.getPixel(20, 20))
         assertEquals("top-left ring", Color.WHITE, pixels.getPixel(20, 4))
         assertEquals("top-left gap between dot and ring", 0, Color.alpha(pixels.getPixel(20, 10)))
