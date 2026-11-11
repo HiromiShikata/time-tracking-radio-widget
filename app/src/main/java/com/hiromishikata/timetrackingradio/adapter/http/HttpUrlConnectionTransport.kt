@@ -13,18 +13,24 @@ class HttpUrlConnectionTransport(private val timeoutMillis: Int = 10_000) : Http
     override fun send(request: HttpRequest): HttpResponse {
         val connection = connecting { URL(request.url).openConnection() as HttpURLConnection }
         try {
-            val (status, location) = connecting {
+            connecting {
                 connection.requestMethod = request.method
                 connection.instanceFollowRedirects = false
                 connection.connectTimeout = timeoutMillis
                 connection.readTimeout = timeoutMillis
                 connection.setRequestProperty("Accept", "application/json")
                 connection.setRequestProperty("User-Agent", USER_AGENT)
-                request.body?.let { body ->
+                val body = request.body
+                if (body != null) {
                     connection.doOutput = true
                     connection.setRequestProperty("Content-Type", "application/json")
+                }
+                connection.connect()
+                if (body != null) {
                     connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
                 }
+            }
+            val (status, location) = reading {
                 connection.responseCode to connection.getHeaderField("Location")
             }
             val body = reading {
