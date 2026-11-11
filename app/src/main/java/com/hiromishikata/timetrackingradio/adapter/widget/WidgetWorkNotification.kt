@@ -14,7 +14,7 @@ internal object WidgetWorkNotification {
     fun foregroundInfo(context: Context): ForegroundInfo {
         ensureChannel(context)
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setSmallIcon(R.drawable.ic_notification_radio)
             .setContentTitle(context.getString(R.string.widget_work_channel_name))
             .setContentText(context.getString(R.string.widget_work_notification_text))
             .setOngoing(true)

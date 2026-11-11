@@ -189,7 +189,7 @@ class UpdateInstallActivity : Activity() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = NotificationCompat.Builder(this, INSTALL_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_warning)
+            .setSmallIcon(R.drawable.ic_notification_radio)
             .setContentTitle(getString(R.string.update_install_confirmation_title))
             .setContentText(getString(R.string.update_install_confirmation_text))
             .setContentIntent(pending)

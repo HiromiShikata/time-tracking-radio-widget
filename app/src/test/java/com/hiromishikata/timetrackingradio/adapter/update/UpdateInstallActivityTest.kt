@@ -10,6 +10,7 @@ import android.content.pm.PackageInstaller
 import android.provider.Settings
 import com.hiromishikata.timetrackingradio.R
 import com.hiromishikata.timetrackingradio.TestApplication
+import com.hiromishikata.timetrackingradio.resourceIdOf
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueDiagnosticLogRepository
 import com.hiromishikata.timetrackingradio.adapter.store.SETTINGS_PREFERENCES_NAME
 import com.hiromishikata.timetrackingradio.adapter.store.SharedPreferencesKeyValueStore
@@ -222,6 +223,16 @@ class UpdateInstallActivityTest {
         assertEquals("app-update-install", notification.channelId)
         assertTrue(shadowOf(notification.contentIntent).savedIntent.filterEquals(confirmation))
         assertRecorded("outcome=pending_user_action", "delivery=notification")
+    }
+
+    @Test
+    fun theConfirmationNotificationUsesTheRadioSmallIcon() {
+        shadowOf(application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        val controller = launchWithApk().pause().stop()
+        controller.newIntent(statusIntent(PackageInstaller.STATUS_PENDING_USER_ACTION))
+        val notification = shadowOf(manager).getNotification(null, UpdateInstallActivity.INSTALL_CONFIRMATION_NOTIFICATION_ID)
+        assertNotNull(notification)
+        assertEquals(application.resourceIdOf("drawable", "ic_notification_radio"), notification.icon)
     }
 
     @Test

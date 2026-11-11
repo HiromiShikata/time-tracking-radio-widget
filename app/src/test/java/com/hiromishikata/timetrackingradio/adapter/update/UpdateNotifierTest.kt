@@ -7,6 +7,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import com.hiromishikata.timetrackingradio.R
 import com.hiromishikata.timetrackingradio.TestApplication
+import com.hiromishikata.timetrackingradio.resourceIdOf
 import com.hiromishikata.timetrackingradio.domain.SemanticVersion
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -38,6 +39,14 @@ class UpdateNotifierTest {
             notifications[0].extras.getCharSequence(Notification.EXTRA_TEXT).toString(),
         )
         assertNotNull(manager.getNotificationChannel("app-update-available"))
+    }
+
+    @Test
+    fun theNotificationUsesTheRadioSmallIcon() {
+        shadowOf(context as Application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        assertTrue(UpdateNotifier(context).announce(SemanticVersion(1, 0, 2), apk))
+        val notification = shadowOf(manager).allNotifications.single()
+        assertEquals(context.resourceIdOf("drawable", "ic_notification_radio"), notification.icon)
     }
 
     @Test
