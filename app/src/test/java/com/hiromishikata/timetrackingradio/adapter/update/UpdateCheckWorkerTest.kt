@@ -37,12 +37,12 @@ class UpdateCheckWorkerTest {
 
     @After
     fun tearDown() {
-        UpdateCheckWorker.releaseRepositoryFactory = { HttpReleaseRepository(UpdateCheckWorker.LATEST_RELEASE_URL, HttpUrlConnectionTransport()) }
+        UpdateCheckWorker.releaseRepositoryFactory = { _, _ -> HttpReleaseRepository(UpdateCheckWorker.LATEST_RELEASE_URL, HttpUrlConnectionTransport()) }
         UpdateCheckWorker.downloaderFactory = { ApkDownloader(it) }
     }
 
     private fun runWorkerWith(repository: ReleaseRepository): ListenableWorker.Result {
-        UpdateCheckWorker.releaseRepositoryFactory = { repository }
+        UpdateCheckWorker.releaseRepositoryFactory = { _, _ -> repository }
         val worker = TestListenableWorkerBuilder<UpdateCheckWorker>(context).build()
         return worker.startWork().get()
     }
@@ -75,7 +75,7 @@ class UpdateCheckWorkerTest {
     fun aDownloadFailedForANetworkReasonIsRetriedWithinFiveMinutesAndTheRetryIsRecorded() {
         installWorkManagerForTests(context)
         Shadows.shadowOf(context as Application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
-        UpdateCheckWorker.releaseRepositoryFactory = {
+        UpdateCheckWorker.releaseRepositoryFactory = { _, _ ->
             object : ReleaseRepository {
                 override fun readLatest(): LatestRelease = LatestRelease(SemanticVersion(0, 0, 1), "https://example.com/app.apk", 4096L)
             }
