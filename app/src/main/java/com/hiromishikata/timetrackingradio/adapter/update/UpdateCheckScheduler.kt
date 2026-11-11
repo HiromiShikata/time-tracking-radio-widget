@@ -3,6 +3,10 @@ package com.hiromishikata.timetrackingradio.adapter.update
 import android.content.Context
 import android.util.Log
 import androidx.work.Constraints
+import androidx.work.workDataOf
+import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
+import com.hiromishikata.timetrackingradio.domain.RetryKind
+import com.hiromishikata.timetrackingradio.domain.retryScheduledDetail
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
@@ -20,12 +24,15 @@ import java.util.concurrent.TimeUnit
 
 object UpdateCheckScheduler {
     private const val UNIQUE_WORK_NAME = "app-update-check"
+    const val DOWNLOAD_RETRY_UNIQUE_WORK_NAME = "app-update-download-retry"
+    const val CHECK_RETRY_UNIQUE_WORK_NAME = "app-update-check-retry"
     private const val ON_DEMAND_WORK_NAME = "app-update-check-once"
     private const val INTERVAL_HOURS = 6L
     private const val FOREGROUND_WORK_NAME = "app-update-check-foreground"
     private const val FOREGROUND_CHECK_KEY = "last_foreground_update_check_at"
     private const val TAG = "UpdateCheckScheduler"
     private val foregroundThrottle: Duration = Duration.ofSeconds(60)
+    private const val RETRY_DELAY_MINUTES = 5L
 
     fun schedule(context: Context) {
         val request = PeriodicWorkRequestBuilder<UpdateCheckWorker>(INTERVAL_HOURS, TimeUnit.HOURS)
@@ -47,6 +54,26 @@ object UpdateCheckScheduler {
             .build()
         WorkManager.getInstance(context)
             .enqueueUniqueWork(ON_DEMAND_WORK_NAME, ExistingWorkPolicy.KEEP, request)
+    }
+
+    fun enqueueDownloadRetry(context: Context, attempt: Int) =
+        enqueueRetry(context, DOWNLOAD_RETRY_UNIQUE_WORK_NAME, RetryKind.UPDATE_DOWNLOAD, attempt)
+
+    fun enqueueCheckRetry(context: Context, attempt: Int) =
+        enqueueRetry(context, CHECK_RETRY_UNIQUE_WORK_NAME, RetryKind.UPDATE_CHECK, attempt)
+
+    private fun enqueueRetry(context: Context, uniqueWorkName: String, kind: RetryKind, attempt: Int) {
+        updateDiagnosticRecorder(context).record(
+            DiagnosticEventType.RETRY_SCHEDULED,
+            retryScheduledDetail(kind, attempt, RETRY_DELAY_MINUTES * 60),
+        )
+        val request = OneTimeWorkRequestBuilder<UpdateCheckWorker>()
+            .setInputData(workDataOf(UpdateCheckWorker.KEY_RETRY_ATTEMPT to attempt))
+            .setInitialDelay(RETRY_DELAY_MINUTES, TimeUnit.MINUTES)
+            .setConstraints(connectedConstraints())
+            .build()
+        WorkManager.getInstance(context)
+            .enqueueUniqueWork(uniqueWorkName, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
     }
 
     fun enqueueForegroundCheckIfDue(context: Context, now: Instant) {

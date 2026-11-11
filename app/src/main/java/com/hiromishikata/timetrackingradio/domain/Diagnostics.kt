@@ -24,7 +24,18 @@ enum class DiagnosticEventType(val code: String) {
     DIAGNOSTICS_UPLOAD("diagnostics_upload"),
     UPDATE_CHECK("update_check"),
     UPDATE_INSTALL("update_install"),
+    RETRY_SCHEDULED("retry_scheduled"),
 }
+
+enum class RetryKind(val code: String) {
+    TAP_QUEUE("tap_queue"),
+    LEGACY_TAP("legacy_tap"),
+    UPDATE_DOWNLOAD("update_download"),
+    UPDATE_CHECK("update_check"),
+}
+
+fun retryScheduledDetail(kind: RetryKind, attempt: Int, delaySeconds: Long): String =
+    "kind=${kind.code}, attempt=$attempt, next_delay_seconds=$delaySeconds"
 
 data class DiagnosticEntry(
     val id: Long,

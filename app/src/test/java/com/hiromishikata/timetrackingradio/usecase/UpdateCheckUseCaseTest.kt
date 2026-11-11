@@ -317,6 +317,21 @@ class UpdateCheckUseCaseTest {
     }
 
     @Test
+    fun aDownloadFailedForANetworkReasonReturnsTheBoundedDownloadRetryStatus() {
+        val downloads = FakeApkDownloads { _, _ -> throw ApkDownloadException("download failed: UnknownHostException", networkReason = true) }
+        val announcer = RecordingAnnouncer()
+        val status = useCase(
+            FakeReleaseRepository { LatestRelease(SemanticVersion(1, 0, 2), apkUrl, apkSize) },
+            downloads,
+            announcer,
+            RecordingDiagnostics(),
+            InMemoryLastUpdateCheckRepository(),
+        ).execute("1.0.1")
+        assertEquals(UpdateCheckStatus.RETRY_DOWNLOAD, status)
+        assertEquals(emptyList<Pair<SemanticVersion, File>>(), announcer.announced)
+    }
+
+    @Test
     fun aFailedDownloadIsRetriedWithoutANotification() {
         val downloads = FakeApkDownloads { _, _ -> throw ApkDownloadException("HTTP 503") }
         val announcer = RecordingAnnouncer()

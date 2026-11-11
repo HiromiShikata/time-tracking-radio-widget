@@ -21,6 +21,8 @@ import com.hiromishikata.timetrackingradio.adapter.store.SharedPreferencesKeyVal
 import com.hiromishikata.timetrackingradio.domain.CellKey
 import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
 import com.hiromishikata.timetrackingradio.domain.DiagnosticRecorder
+import com.hiromishikata.timetrackingradio.domain.RetryKind
+import com.hiromishikata.timetrackingradio.domain.retryScheduledDetail
 import com.hiromishikata.timetrackingradio.domain.NetworkUnavailableException
 import com.hiromishikata.timetrackingradio.domain.Selection
 import com.hiromishikata.timetrackingradio.domain.SelectionRequest
@@ -32,6 +34,7 @@ import com.hiromishikata.timetrackingradio.domain.resolveTapRequest
 import com.hiromishikata.timetrackingradio.usecase.DiagnosticUploadUseCase
 import com.hiromishikata.timetrackingradio.usecase.WidgetSelectionUpdateUseCase
 import com.hiromishikata.timetrackingradio.usecase.WidgetSnapshotReadUseCase
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.withLock
 import java.time.Duration
 import java.time.Instant
@@ -46,6 +49,8 @@ private val WORK_ABSENT_GRACE_PERIOD: Duration = Duration.ofMinutes(10)
 private val FINISHED_WORK_STATES = setOf(WorkInfo.State.SUCCEEDED, WorkInfo.State.FAILED, WorkInfo.State.CANCELLED)
 
 data class AcceptedTap(val tappedAt: Instant, val request: SelectionRequest)
+
+data class DrainResult(val answered: Int, val unanswered: Int)
 
 data class QueuedTapAccept(val accepted: AcceptedTap, val workRequest: OneTimeWorkRequest)
 
@@ -122,11 +127,56 @@ class WidgetController(
     }
 
     suspend fun performTap(cell: CellKey, request: SelectionRequest, tappedAt: Instant) {
-        WidgetScope.mutex.withLock { sendTap(cell, request, tappedAt, workId = null) }
+        WidgetScope.mutex.withLock { sendTap(cell, request, tappedAt) }
     }
 
-    suspend fun performWorkTap(cell: CellKey, request: SelectionRequest, tappedAt: Instant, workId: UUID) {
-        WidgetScope.mutex.withLock { sendTap(cell, request, tappedAt, workId) }
+    suspend fun performWorkTap(cell: CellKey, request: SelectionRequest, tappedAt: Instant): DrainResult = WidgetScope.mutex.withLock {
+        when {
+            !isPending(cell, tappedAt) -> DrainResult(answered = 0, unanswered = 0)
+            hasOlderPending(tappedAt) -> drainLocked()
+            else -> {
+                sendTap(cell, request, tappedAt)
+                DrainResult(answered = 1, unanswered = 0)
+            }
+        }
+    }
+
+    suspend fun drainPendingTaps(): DrainResult = WidgetScope.mutex.withLock { drainLocked() }
+
+    private fun drainLocked(): DrainResult {
+        val pending = synchronized(WidgetStateLock) { storedQueue(clock()) }
+            .filter { it.workEnqueued }
+            .sortedBy { it.acceptedAt }
+        var answered = 0
+        var unanswered = 0
+        for (entry in pending) {
+            if (!isPending(entry.cell, entry.acceptedAt)) continue
+            try {
+                sendTap(entry.cell, entry.request, entry.acceptedAt)
+                answered += 1
+            } catch (unavailable: NetworkUnavailableException) {
+                unanswered += 1
+                logWidgetWorkFailure(unavailable)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                logWidgetWorkFailure(failure)
+            }
+        }
+        return DrainResult(answered, unanswered)
+    }
+
+    fun releaseWork(workIds: Set<UUID>): Set<UUID> = synchronized(WidgetStateLock) {
+        val entries = storedQueue(clock())
+        val released = entries.mapNotNull { it.workId }.filter { it in workIds }.toSet()
+        if (released.isNotEmpty()) {
+            queuedTaps.write(entries.map { entry -> if (entry.workId?.let { it in released } == true) entry.copy(workId = null) else entry })
+        }
+        released
+    }
+
+    fun recordRetryScheduled(kind: RetryKind, attempt: Int, delaySeconds: Long) {
+        recorderFor(settings.read()).record(DiagnosticEventType.RETRY_SCHEDULED, retryScheduledDetail(kind, attempt, delaySeconds))
     }
 
     suspend fun performLegacyTap(cell: CellKey) {
@@ -195,7 +245,15 @@ class WidgetController(
         ).execute()
     }
 
-    private fun sendTap(cell: CellKey, request: SelectionRequest, tappedAt: Instant, workId: UUID?) {
+    private fun isPending(cell: CellKey, tappedAt: Instant): Boolean = synchronized(WidgetStateLock) {
+        storedQueue(clock()).any { it.workEnqueued && it.cell == cell && it.acceptedAt == tappedAt }
+    }
+
+    private fun hasOlderPending(tappedAt: Instant): Boolean = synchronized(WidgetStateLock) {
+        storedQueue(clock()).any { it.workEnqueued && it.acceptedAt.isBefore(tappedAt) }
+    }
+
+    private fun sendTap(cell: CellKey, request: SelectionRequest, tappedAt: Instant) {
         val loaded = settings.read()
         if (loaded == null) {
             discardTap(cell, tappedAt)
@@ -215,7 +273,7 @@ class WidgetController(
             val now = clock()
             publishSettled { entries ->
                 if (awaitingNetwork) {
-                    entries.withPendingWork(cell, tappedAt, request, now, workId)
+                    entries.withPendingWork(cell, tappedAt, request, now)
                 } else {
                     entries.withoutTap(cell, tappedAt)
                 }
@@ -318,18 +376,17 @@ private fun List<QueuedTap>.withPendingWork(
     tappedAt: Instant,
     request: SelectionRequest,
     now: Instant,
-    workId: UUID?,
 ): List<QueuedTap> {
     val index = indexOfTap(cell, tappedAt)
     return if (index < 0) {
         if (tappedAt.isBefore(now.minus(PENDING_TAP_DISPLAY_MAX_AGE))) {
             this
         } else {
-            this + QueuedTap(cell, tappedAt, request, workEnqueued = true, waiting = true, workId = workId)
+            this + QueuedTap(cell, tappedAt, request, workEnqueued = true, waiting = true, workId = null)
         }
     } else {
         mapIndexed { position, entry ->
-            if (position == index) entry.copy(workEnqueued = true, waiting = true) else entry
+            if (position == index) entry.copy(workEnqueued = true, waiting = true, workId = null) else entry
         }
     }
 }

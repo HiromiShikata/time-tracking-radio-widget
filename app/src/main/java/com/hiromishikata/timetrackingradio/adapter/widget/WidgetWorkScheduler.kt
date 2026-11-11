@@ -1,7 +1,6 @@
 package com.hiromishikata.timetrackingradio.adapter.widget
 
 import android.content.Context
-import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
@@ -10,15 +9,24 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import com.hiromishikata.timetrackingradio.domain.CellKey
+import com.hiromishikata.timetrackingradio.domain.RetryKind
 import com.hiromishikata.timetrackingradio.domain.SelectionRequest
 import java.time.Instant
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 object WidgetWorkScheduler {
-    private const val TAP_RETRY_INITIAL_BACKOFF_SECONDS = 10L
+    const val DRAIN_UNIQUE_WORK_NAME = "widget-drain"
+    const val DRAIN_RETRY_UNIQUE_WORK_NAME = "widget-drain-retry"
+    const val LEGACY_TAP_RETRY_UNIQUE_WORK_NAME = "widget-legacy-retry"
+
+    const val TAP_RETRY_DELAY_SECONDS = 60L
+
+    private const val WORK_INFO_TIMEOUT_SECONDS = 5L
 
     fun buildTapRequest(cell: CellKey, tappedAt: Instant, request: SelectionRequest): OneTimeWorkRequest {
         require(request !is SelectionRequest.Select || request.cell == cell) { "a tap's selection request names another cell" }
@@ -32,8 +40,7 @@ object WidgetWorkScheduler {
                 ),
             )
             .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, TAP_RETRY_INITIAL_BACKOFF_SECONDS, TimeUnit.SECONDS)
+            .setConstraints(connectedConstraints())
             .build()
     }
 
@@ -61,10 +68,83 @@ object WidgetWorkScheduler {
         )
     }
 
+    fun enqueueAppStart(context: Context) {
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            WidgetAppStartWorker.UNIQUE_WORK_NAME,
+            ExistingWorkPolicy.REPLACE,
+            OneTimeWorkRequestBuilder<WidgetAppStartWorker>().build(),
+        )
+    }
+
+    fun kickPendingTaps(context: Context, attempt: Int = 0) {
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            DRAIN_UNIQUE_WORK_NAME,
+            ExistingWorkPolicy.KEEP,
+            OneTimeWorkRequestBuilder<WidgetSelectionWorker>()
+                .setInputData(
+                    workDataOf(
+                        WidgetSelectionWorker.KEY_DRAIN to true,
+                        WidgetSelectionWorker.KEY_ATTEMPT to attempt,
+                    ),
+                )
+                .setConstraints(connectedConstraints())
+                .build(),
+        )
+    }
+
+    fun scheduleDrainRetry(context: Context, attempt: Int) {
+        recordRetry(context, RetryKind.TAP_QUEUE, attempt)
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            DRAIN_RETRY_UNIQUE_WORK_NAME,
+            ExistingWorkPolicy.REPLACE,
+            OneTimeWorkRequestBuilder<WidgetSelectionWorker>()
+                .setInputData(
+                    workDataOf(
+                        WidgetSelectionWorker.KEY_RELAY to true,
+                        WidgetSelectionWorker.KEY_ATTEMPT to attempt,
+                    ),
+                )
+                .setInitialDelay(TAP_RETRY_DELAY_SECONDS, TimeUnit.SECONDS)
+                .setConstraints(connectedConstraints())
+                .build(),
+        )
+    }
+
+    fun scheduleLegacyTapRetry(context: Context, input: Data, attempt: Int) {
+        recordRetry(context, RetryKind.LEGACY_TAP, attempt)
+        val retryInput = Data.Builder().putAll(input).putInt(WidgetSelectionWorker.KEY_ATTEMPT, attempt).build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            LEGACY_TAP_RETRY_UNIQUE_WORK_NAME,
+            ExistingWorkPolicy.APPEND_OR_REPLACE,
+            OneTimeWorkRequestBuilder<WidgetSelectionWorker>()
+                .setInputData(retryInput)
+                .setInitialDelay(TAP_RETRY_DELAY_SECONDS, TimeUnit.SECONDS)
+                .setConstraints(connectedConstraints())
+                .build(),
+        )
+    }
+
+    fun releaseBackedOffTaps(context: Context) {
+        val workManager = WorkManager.getInstance(context)
+        val waiting: Set<UUID> = workManager.getWorkInfosForUniqueWork(WidgetSelectionWorker.UNIQUE_WORK_NAME)
+            .get(WORK_INFO_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .filter { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.BLOCKED }
+            .map { it.id }
+            .toSet()
+        if (waiting.isEmpty()) return
+        WidgetController(context).releaseWork(waiting).forEach { workManager.cancelWorkById(it) }
+    }
+
+    private fun recordRetry(context: Context, kind: RetryKind, attempt: Int) {
+        WidgetController(context).recordRetryScheduled(kind, attempt, TAP_RETRY_DELAY_SECONDS)
+    }
+
     private fun requestKindOf(request: SelectionRequest): String = when (request) {
         is SelectionRequest.Select -> WidgetSelectionWorker.REQUEST_KIND_SELECT
         SelectionRequest.Clear -> WidgetSelectionWorker.REQUEST_KIND_CLEAR
     }
+
+    private fun connectedConstraints(): Constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
 
     private inline fun <reified Worker : ListenableWorker> buildWorkRequest(input: Data, expedited: Boolean): OneTimeWorkRequest {
         val builder = OneTimeWorkRequestBuilder<Worker>().setInputData(input)

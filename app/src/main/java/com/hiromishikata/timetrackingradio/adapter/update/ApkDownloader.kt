@@ -8,6 +8,7 @@ import com.hiromishikata.timetrackingradio.domain.verifyDownloadedSize
 import java.io.ByteArrayInputStream
 import java.io.Closeable
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
@@ -59,7 +60,7 @@ class ApkDownloader(
             throw failure
         } catch (failure: Exception) {
             partial.delete()
-            throw ApkDownloadException("download failed: $failure")
+            throw ApkDownloadException("download failed: $failure", networkReason = failure is IOException)
         }
         removeStaleVersionedApks(updates, target)
         return target

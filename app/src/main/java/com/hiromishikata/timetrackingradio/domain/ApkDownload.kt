@@ -6,7 +6,7 @@ interface ApkDownloadRepository {
     fun download(url: String, expectedSizeBytes: Long, version: SemanticVersion): File
 }
 
-class ApkDownloadException(message: String) : RuntimeException(message)
+class ApkDownloadException(message: String, val networkReason: Boolean = false) : RuntimeException(message)
 
 fun verifyDownloadedSize(actualBytes: Long, expectedBytes: Long) {
     if (actualBytes != expectedBytes) {

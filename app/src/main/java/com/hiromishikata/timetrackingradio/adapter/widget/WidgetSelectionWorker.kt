@@ -44,6 +44,7 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
     override fun onStopped() {
         scope.cancel()
         requestedStampedTapOrNull()?.let { tap -> controllerFactory(applicationContext).markWaiting(tap.cell, tap.tappedAt) }
+        WidgetWorkScheduler.scheduleDrainRetry(applicationContext, attempt = 1)
     }
 
     private suspend fun runSelection(): Result {
@@ -54,8 +55,13 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
             controller.dropFinishedWork(ownTap?.cell, ownTap?.tappedAt) { uniqueWorkInfos() }
             when (val work = requestedWork()) {
                 RequestedWork.Refresh -> controller.refresh()
-                is RequestedWork.StampedTap -> controller.performWorkTap(work.cell, work.request, work.tappedAt, id)
+                is RequestedWork.StampedTap -> {
+                    val drained = controller.performWorkTap(work.cell, work.request, work.tappedAt)
+                    if (drained.unanswered > 0) WidgetWorkScheduler.scheduleDrainRetry(applicationContext, attempt = 1)
+                }
                 is RequestedWork.LegacyTap -> controller.performLegacyTap(work.cell)
+                is RequestedWork.Drain -> return drainPendingTaps(controller, work.attempt)
+                is RequestedWork.Relay -> return relayDrain(work.attempt)
             }
             currentCoroutineContext().ensureActive()
             WidgetWorkScheduler.enqueueDiagnosticsUpload(applicationContext)
@@ -65,7 +71,8 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
             throw cancelled
         } catch (unavailable: NetworkUnavailableException) {
             logWidgetWorkFailure(unavailable)
-            Result.retry()
+            scheduleTransientRetry()
+            Result.success()
         } catch (failure: Exception) {
             logWidgetWorkFailure(failure)
             requestedStampedTapOrNull()?.let { tap -> controller.discardTap(tap.cell, tap.tappedAt) }
@@ -75,6 +82,29 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
         }
         if (completedNormally) runUpdateCheckTrigger()
         return result
+    }
+
+    private fun scheduleTransientRetry() {
+        val attempt = inputData.getInt(KEY_ATTEMPT, 0) + 1
+        when (runCatching { requestedWork() }.getOrNull()) {
+            is RequestedWork.LegacyTap -> WidgetWorkScheduler.scheduleLegacyTapRetry(applicationContext, inputData, attempt)
+            else -> WidgetWorkScheduler.scheduleDrainRetry(applicationContext, attempt)
+        }
+    }
+
+    private suspend fun drainPendingTaps(controller: WidgetController, attempt: Int): Result {
+        val drained = controller.drainPendingTaps()
+        if (drained.unanswered > 0) WidgetWorkScheduler.scheduleDrainRetry(applicationContext, attempt + 1)
+        if (drained.answered > 0) {
+            WidgetWorkScheduler.enqueueDiagnosticsUpload(applicationContext)
+            runUpdateCheckTrigger()
+        }
+        return Result.success()
+    }
+
+    private fun relayDrain(attempt: Int): Result {
+        WidgetWorkScheduler.kickPendingTaps(applicationContext, attempt)
+        return Result.success()
     }
 
     private fun runUpdateCheckTrigger() {
@@ -92,6 +122,9 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
         .get(WORK_INFO_TIMEOUT_SECONDS, TimeUnit.SECONDS)
 
     private fun requestedWork(): RequestedWork {
+        val attempt = inputData.getInt(KEY_ATTEMPT, 0)
+        if (inputData.getBoolean(KEY_RELAY, false)) return RequestedWork.Relay(attempt)
+        if (inputData.getBoolean(KEY_DRAIN, false)) return RequestedWork.Drain(attempt)
         val project = inputData.getString(KEY_PROJECT)
         val activityCode = inputData.getString(KEY_ACTIVITY)
         val tappedAtText = inputData.getString(KEY_TAPPED_AT)
@@ -125,6 +158,9 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
         const val KEY_ACTIVITY = "activity"
         const val KEY_TAPPED_AT = "tappedAt"
         const val KEY_REQUEST_KIND = "requestKind"
+        const val KEY_ATTEMPT = "attempt"
+        const val KEY_DRAIN = "drain"
+        const val KEY_RELAY = "relay"
         const val REQUEST_KIND_SELECT = "select"
         const val REQUEST_KIND_CLEAR = "clear"
         private const val LOG_TAG = "WidgetSelectionWorker"
@@ -140,6 +176,10 @@ private sealed interface RequestedWork {
     data class StampedTap(val cell: CellKey, val request: SelectionRequest, val tappedAt: Instant) : RequestedWork
 
     data class LegacyTap(val cell: CellKey) : RequestedWork
+
+    data class Drain(val attempt: Int) : RequestedWork
+
+    data class Relay(val attempt: Int) : RequestedWork
 }
 
 private class CompletableListenableFuture<V>(private val delegate: CompletableFuture<V>) :

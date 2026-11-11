@@ -854,7 +854,7 @@ class WidgetControllerTest {
         val controller = recordingController(transport, mutableListOf()) { tappedAt }
         val accepted = controller.acceptQueued(meeting)
         val result = runStoredTap(storedTapInput(context, accepted.workRequest), transport)
-        assertTrue("result=$result", result is ListenableWorker.Result.Retry)
+        assertTrue("result=$result", result is ListenableWorker.Result.Success)
         val probe = controller.acceptTap(meeting, workEnqueued = false)
         assertEquals(SelectionRequest.Clear, probe.request)
     }

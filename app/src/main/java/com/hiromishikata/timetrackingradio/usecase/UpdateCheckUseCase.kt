@@ -13,7 +13,7 @@ import com.hiromishikata.timetrackingradio.domain.decideUpdate
 import com.hiromishikata.timetrackingradio.domain.parseSemanticVersion
 import java.time.Instant
 
-enum class UpdateCheckStatus { COMPLETED, RETRY, FAILED }
+enum class UpdateCheckStatus { COMPLETED, RETRY, RETRY_DOWNLOAD, FAILED }
 
 class UpdateCheckUseCase(
     private val releases: ReleaseRepository,
@@ -60,7 +60,7 @@ class UpdateCheckUseCase(
             downloads.download(decision.apkDownloadUrl, decision.apkSizeBytes, decision.version)
         } catch (failure: ApkDownloadException) {
             recordCheck(installedName, latestText, DECISION_NEWER_AVAILABLE, DOWNLOAD_FAILED, failure.message.orEmpty(), permitted, false)
-            return UpdateCheckStatus.RETRY
+            return if (failure.networkReason) UpdateCheckStatus.RETRY_DOWNLOAD else UpdateCheckStatus.RETRY
         }
         val notified = try {
             announcer.announce(decision.version, apk)
