@@ -74,7 +74,7 @@ class WidgetStatusDetailTest {
             StatusCase(
                 "an unsent tap before sending starts shows the tap time",
                 snapshot(selection = Selection(meeting, tapAt), pendingTapAt = tapAt, queuedTapCount = 1),
-            ) { app -> listOf("Recording project-a / meeting", "since 02:19 UTC", "Saving… sent 02:19:03", "Queue 1 · app $app") },
+            ) { app -> listOf("Recording project-a / meeting", "since 02:19 UTC", "Saving… tapped 02:19:03", "Queue 1 · app $app") },
             StatusCase(
                 "an in-flight tap shows the time it was sent",
                 snapshot(
@@ -141,6 +141,48 @@ class WidgetStatusDetailTest {
                 case.expectedLines(versionName).joinToString("\n"),
                 factory.statusText(case.snapshot, now),
             )
+        }
+    }
+
+    @Test
+    fun theSavingLineReadsTappedUntilSendingStartsAndSentAfterwards() {
+        data class SavingCase(
+            val name: String,
+            val tappedAt: Instant,
+            val sentAt: Instant?,
+            val expectedStateLine: String,
+        )
+        val cases = listOf(
+            SavingCase(
+                "before sending starts shows the tap time",
+                tappedAt = tapAt,
+                sentAt = null,
+                expectedStateLine = "Saving… tapped 02:19:03",
+            ),
+            SavingCase(
+                "before sending starts a later tap shows its own tap time",
+                tappedAt = Instant.parse("2026-11-09T02:30:59.999Z"),
+                sentAt = null,
+                expectedStateLine = "Saving… tapped 02:30:59",
+            ),
+            SavingCase(
+                "once sending has started shows the send time, not the tap time",
+                tappedAt = tapAt,
+                sentAt = Instant.parse("2026-11-09T02:19:05.001Z"),
+                expectedStateLine = "Saving… sent 02:19:05",
+            ),
+        )
+        cases.forEach { case ->
+            val status = factory.statusText(
+                snapshot(
+                    selection = Selection(meeting, case.tappedAt),
+                    pendingTapAt = case.tappedAt,
+                    sentAt = case.sentAt,
+                    queuedTapCount = 1,
+                ),
+                now,
+            )
+            assertEquals("case=${case.name}", case.expectedStateLine, stateLineOf(status))
         }
     }
 

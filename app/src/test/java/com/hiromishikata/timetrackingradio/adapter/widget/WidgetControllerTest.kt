@@ -506,7 +506,7 @@ class WidgetControllerTest {
         assertEquals(SelectionRequest.Select(work), snapshot.sending)
         assertEquals(SelectionRequest.Select(work), KeyValueWidgetSnapshotRepository(store).read().sending)
         assertEquals(R.drawable.cell_selected, renderedCellDrawableResId(context, snapshot, work))
-        assertTrue("status=$status", SAVING_LINE.matches(stateLineOf(status)))
+        assertTrue("status=$status", SAVING_TAPPED_LINE.matches(stateLineOf(status)))
         assertEquals(0, transport.calls)
     }
 
@@ -519,8 +519,8 @@ class WidgetControllerTest {
         val workController = recordingController(transport, rendered) { acceptedClock }
         val accepted = workController.acceptQueued(work)
         assertEquals(
-            "before the POST starts the status shows the accept time",
-            "Saving… sent 02:18:03",
+            "before the POST starts the status shows the tap time",
+            "Saving… tapped 02:18:03",
             stateLineOf(renderedStatusText(context, rendered.last())),
         )
         val input = storedTapInput(context, accepted.workRequest)
@@ -531,6 +531,34 @@ class WidgetControllerTest {
             assertEquals("the status shows the send time", "Saving… sent 02:19:03", stateLineOf(renderedStatusText(context, sending)))
             assertEquals(R.drawable.cell_selected, renderedCellDrawableResId(context, sending, work))
             assertEquals(SelectionRequest.Select(work), sending.sending)
+        } finally {
+            transport.releaseSelection.countDown()
+            first.join(5_000)
+        }
+    }
+
+    @Test
+    fun theSavingStatusReadsTappedUntilSendingStartsThenSentAtTheSendStartTime() {
+        KeyValueWidgetSettingsRepository(store).write(settings)
+        val transport = GatedSelectionTransport(selectedMeetingBody)
+        val rendered = CopyOnWriteArrayList<WidgetSnapshot>()
+        val sendingStartedAt = tappedAt.plusMillis(1_500)
+        val accepted = recordingController(transport, rendered) { tappedAt }.acceptQueued(work)
+        assertEquals(
+            "after the tap and before the POST starts the status shows the tap time",
+            "Saving… tapped 02:19:03",
+            stateLineOf(renderedStatusText(context, rendered.last())),
+        )
+        val input = storedTapInput(context, accepted.workRequest)
+        val first = thread { runStoredTap(input, transport, publish = { _, snapshot -> rendered += snapshot }) { sendingStartedAt } }
+        try {
+            assertTrue("the POST started", transport.selectionStarted.await(5, TimeUnit.SECONDS))
+            val sending = awaitLastRendered(rendered) { stateLineOf(renderedStatusText(context, it)) == "Saving… sent 02:19:04" }
+            assertEquals(
+                "once the POST started the status shows the send start time",
+                "Saving… sent 02:19:04",
+                stateLineOf(renderedStatusText(context, sending)),
+            )
         } finally {
             transport.releaseSelection.countDown()
             first.join(5_000)
@@ -570,7 +598,7 @@ class WidgetControllerTest {
         val status = renderedStatusText(context, rendered.last())
         assertEquals(SelectionRequest.Select(work), rendered.last().sending)
         assertEquals(R.drawable.cell_selected, renderedCellDrawableResId(context, rendered.last(), work))
-        assertEquals("status=$status", "Saving… sent 08:00:00", stateLineOf(status))
+        assertEquals("status=$status", "Saving… tapped 08:00:00", stateLineOf(status))
     }
 
     @Test
@@ -663,7 +691,7 @@ class WidgetControllerTest {
         assertEquals(SelectionRequest.Select(work), snapshot.sending)
         assertEquals(R.drawable.cell_selected, renderedCellDrawableResId(context, snapshot, work))
         assertEquals(R.drawable.cell_unselected, renderedCellDrawableResId(context, snapshot, meeting))
-        assertEquals("status=$status", "Saving… sent 02:19:03", stateLineOf(status))
+        assertEquals("status=$status", "Saving… tapped 02:19:03", stateLineOf(status))
     }
 
     @Test
@@ -707,7 +735,7 @@ class WidgetControllerTest {
         val last = rendered.last()
         val status = renderedStatusText(context, last)
         assertEquals(SelectionRequest.Select(work), last.sending)
-        assertEquals("status=$status", "Saving… sent 02:19:03", stateLineOf(status))
+        assertEquals("status=$status", "Saving… tapped 02:19:03", stateLineOf(status))
         assertEquals("the completed tap's cell is no longer projected", R.drawable.cell_unselected, renderedCellDrawableResId(context, last, meeting))
         assertEquals("the later tap is projected", R.drawable.cell_selected, renderedCellDrawableResId(context, last, work))
     }
@@ -742,7 +770,7 @@ class WidgetControllerTest {
         val status = renderedStatusText(context, last)
         assertEquals(SelectionRequest.Clear, last.sending)
         assertEquals("the pending Clear projects no selection on the meeting cell", R.drawable.cell_unselected, renderedCellDrawableResId(context, last, meeting))
-        assertEquals("status=$status", "Saving… sent 02:19:04", stateLineOf(status))
+        assertEquals("status=$status", "Saving… tapped 02:19:04", stateLineOf(status))
     }
 
     @Test

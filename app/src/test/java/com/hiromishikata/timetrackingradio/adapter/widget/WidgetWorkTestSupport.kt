@@ -160,7 +160,7 @@ internal val WAITING_FOR_NETWORK_TEXT = Regex("waiting for (the )?network", Rege
 
 internal val WAITING_FOR_NETWORK_LINE = Regex("Waiting for network since \\d{2}:\\d{2}:\\d{2}")
 
-internal val SAVING_LINE = Regex("Saving… sent \\d{2}:\\d{2}:\\d{2}")
+internal val SAVING_TAPPED_LINE = Regex("Saving… tapped \\d{2}:\\d{2}:\\d{2}")
 
 internal fun stateLineOf(status: String): String = status.lines().dropLast(1).last()
 
