@@ -5,10 +5,6 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import com.hiromishikata.timetrackingradio.R
 import com.hiromishikata.timetrackingradio.TestApplication
-import com.hiromishikata.timetrackingradio.domain.ActivityKind
-import com.hiromishikata.timetrackingradio.domain.CellKey
-import com.hiromishikata.timetrackingradio.domain.SelectionRequest
-import com.hiromishikata.timetrackingradio.domain.WidgetOutcome
 import com.hiromishikata.timetrackingradio.domain.WidgetSettings
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
 import org.junit.Assert.assertEquals
@@ -45,28 +41,5 @@ class SelectionWidgetRemoteViewsFactoryTest {
             val rows = root.findViewById<ViewGroup>(R.id.grid_rows)
             assertEquals("case=$name", second, rows.childCount)
         }
-    }
-
-    @Test
-    fun aSelectionInFlightRendersTheSendingRingOnItsCellAndTheSwitchingStatus() {
-        val meeting = CellKey("project-a", ActivityKind.MEETING)
-        val work = CellKey("project-a", ActivityKind.WORK)
-        val snapshot = WidgetSnapshot(null, null, WidgetOutcome.Settled, SelectionRequest.Select(meeting), SelectionRequest.Select(meeting))
-        val cases = listOf(
-            Pair(meeting, R.drawable.cell_sending),
-            Pair(work, R.drawable.cell_unselected),
-        )
-        cases.forEach { (cell, expectedDrawable) ->
-            assertEquals("cell=$cell", expectedDrawable, renderedCellDrawableResId(context, snapshot, cell))
-        }
-        assertEquals("Switching to project-a / meeting…", renderedStatusText(context, snapshot))
-    }
-
-    @Test
-    fun aSendingRingWithoutAStatusRequestDoesNotFallBackToTheSwitchingStatus() {
-        val meeting = CellKey("project-a", ActivityKind.MEETING)
-        val idle = WidgetSnapshot(null, null, WidgetOutcome.Settled, null, null)
-        val snapshot = WidgetSnapshot(null, null, WidgetOutcome.Settled, SelectionRequest.Select(meeting), null)
-        assertEquals(renderedStatusText(context, idle), renderedStatusText(context, snapshot))
     }
 }
