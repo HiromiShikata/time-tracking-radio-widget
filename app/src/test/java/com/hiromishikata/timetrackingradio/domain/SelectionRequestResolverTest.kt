@@ -20,29 +20,4 @@ class SelectionRequestResolverTest {
             assertEquals("current=$current tapped=$tapped", expected, resolveTapRequest(current, tapped))
         }
     }
-
-    @Test
-    fun cellVisualShowsSendingOnTheTappedCell() {
-        data class Case(
-            val cell: CellKey,
-            val current: Selection?,
-            val sending: SelectionRequest?,
-            val expected: CellVisual,
-        )
-        val cases = listOf(
-            Case(work, null, null, CellVisual.UNSELECTED),
-            Case(work, Selection(work, since), null, CellVisual.SELECTED),
-            Case(meeting, Selection(work, since), SelectionRequest.Select(meeting), CellVisual.SENDING),
-            Case(work, Selection(work, since), SelectionRequest.Select(meeting), CellVisual.SELECTED),
-            Case(work, Selection(work, since), SelectionRequest.Clear, CellVisual.SENDING),
-            Case(meeting, null, SelectionRequest.Clear, CellVisual.UNSELECTED),
-        )
-        cases.forEach { case ->
-            assertEquals(
-                "cell=${case.cell} current=${case.current} sending=${case.sending}",
-                case.expected,
-                resolveCellVisual(case.cell, case.current, case.sending),
-            )
-        }
-    }
 }

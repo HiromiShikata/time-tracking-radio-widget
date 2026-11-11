@@ -17,6 +17,7 @@ import com.hiromishikata.timetrackingradio.R
 import com.hiromishikata.timetrackingradio.TestApplication
 import com.hiromishikata.timetrackingradio.adapter.http.FakeHttpTransport
 import com.hiromishikata.timetrackingradio.adapter.http.HttpResponse
+import com.hiromishikata.timetrackingradio.adapter.widget.installWorkManagerForTests
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueDiagnosticLogRepository
 import com.hiromishikata.timetrackingradio.adapter.store.SETTINGS_PREFERENCES_NAME
 import com.hiromishikata.timetrackingradio.adapter.store.SharedPreferencesKeyValueStore
@@ -119,6 +120,7 @@ class SettingsActivityTest {
 
     @Test
     fun copyLogPutsTheWholeLogOnTheClipboard() {
+        installWorkManagerForTests(context)
         KeyValueDiagnosticLogRepository(
             SharedPreferencesKeyValueStore(context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE)),
         ).append(Instant.parse("2026-11-08T00:01:00Z"), DiagnosticEventType.TAP_RECEIVED, "project=a, activity=work")

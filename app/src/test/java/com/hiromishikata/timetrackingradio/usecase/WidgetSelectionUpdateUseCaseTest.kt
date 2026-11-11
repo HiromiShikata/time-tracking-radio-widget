@@ -41,7 +41,7 @@ class WidgetSelectionUpdateUseCaseTest {
                 work,
                 { SelectionResponse.Accepted(Selection(work, now)) },
                 SelectionRequest.Select(work),
-                WidgetSnapshot(Selection(work, now), now, WidgetOutcome.Settled, null, null),
+                WidgetSnapshot(Selection(work, now), now, WidgetOutcome.Settled, null, null, savedAt = now, roundTripMillis = 0L),
             ),
             Case(
                 "tapping the selected cell clears",
@@ -49,7 +49,7 @@ class WidgetSelectionUpdateUseCaseTest {
                 work,
                 { SelectionResponse.Accepted(null) },
                 SelectionRequest.Clear,
-                WidgetSnapshot(null, now, WidgetOutcome.Settled, null, null),
+                WidgetSnapshot(null, now, WidgetOutcome.Settled, null, null, savedAt = now, roundTripMillis = 0L),
             ),
             Case(
                 "network failure keeps the shown state",

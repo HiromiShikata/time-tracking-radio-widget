@@ -18,6 +18,12 @@ data class WidgetSnapshot(
     val outcome: WidgetOutcome,
     val sending: SelectionRequest?,
     val statusRequest: SelectionRequest?,
+    val pendingTapAt: Instant? = null,
+    val sentAt: Instant? = null,
+    val oldestUnsentTapAt: Instant? = null,
+    val savedAt: Instant? = null,
+    val roundTripMillis: Long? = null,
+    val queuedTapCount: Int = 0,
 ) {
     companion object {
         val EMPTY = WidgetSnapshot(null, null, WidgetOutcome.Settled, null, null)

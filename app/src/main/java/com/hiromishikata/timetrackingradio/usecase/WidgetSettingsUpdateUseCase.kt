@@ -5,9 +5,11 @@ import com.hiromishikata.timetrackingradio.domain.WidgetSettingsValidation
 import com.hiromishikata.timetrackingradio.domain.validateWidgetSettings
 
 class WidgetSettingsUpdateUseCase(private val settings: WidgetSettingsRepository) {
-    fun execute(endpointUrl: String, projectsText: String): WidgetSettingsValidation {
+    fun execute(endpointUrl: String, projectsText: String, showStatusDetails: Boolean): WidgetSettingsValidation {
         val validation = validateWidgetSettings(endpointUrl, projectsText)
-        if (validation is WidgetSettingsValidation.Valid) settings.write(validation.settings)
+        if (validation is WidgetSettingsValidation.Valid) {
+            settings.write(validation.settings.copy(showStatusDetails = showStatusDetails))
+        }
         return validation
     }
 }

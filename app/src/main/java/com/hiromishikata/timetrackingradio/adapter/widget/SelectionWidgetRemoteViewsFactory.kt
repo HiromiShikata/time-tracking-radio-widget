@@ -3,19 +3,19 @@ package com.hiromishikata.timetrackingradio.adapter.widget
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.view.View
 import android.widget.RemoteViews
 import androidx.core.net.toUri
 import com.hiromishikata.timetrackingradio.R
 import com.hiromishikata.timetrackingradio.domain.ActivityKind
 import com.hiromishikata.timetrackingradio.domain.CellKey
-import com.hiromishikata.timetrackingradio.domain.CellVisual
+import com.hiromishikata.timetrackingradio.domain.WidgetOutcome
 import com.hiromishikata.timetrackingradio.domain.WidgetSettings
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
-import com.hiromishikata.timetrackingradio.domain.WidgetStatus
 import com.hiromishikata.timetrackingradio.domain.formatUtcHourMinute
-import com.hiromishikata.timetrackingradio.domain.resolveCellVisual
-import com.hiromishikata.timetrackingradio.domain.resolveWidgetStatus
+import com.hiromishikata.timetrackingradio.domain.formatUtcHourMinuteSecond
 import java.time.Instant
+import java.util.Locale
 
 class SelectionWidgetRemoteViewsFactory(private val context: Context) {
     fun build(settings: WidgetSettings?, snapshot: WidgetSnapshot, now: Instant): RemoteViews {
@@ -26,17 +26,49 @@ class SelectionWidgetRemoteViewsFactory(private val context: Context) {
             views.addView(R.id.grid_rows, buildRow(rowIndex, project, snapshot))
         }
         views.setTextViewText(R.id.status_text, statusText(snapshot, now))
+        views.setViewVisibility(R.id.status_text, if (settings?.showStatusDetails == false) View.GONE else View.VISIBLE)
         return views
     }
 
-    fun statusText(snapshot: WidgetSnapshot, now: Instant): String = statusTextOf(
-        resolveWidgetStatus(
-            selection = snapshot.selection,
-            sending = snapshot.statusRequest,
-            outcome = snapshot.outcome,
-            asOf = snapshot.fetchedAt ?: now,
-        ),
-    )
+    fun statusText(snapshot: WidgetSnapshot, now: Instant): String {
+        val selection = snapshot.selection
+        val selectionLines = if (selection == null) {
+            listOf(context.getString(R.string.status_not_recording))
+        } else {
+            listOf(
+                context.getString(R.string.status_recording, selection.cell.project, selection.cell.activity.code),
+                context.getString(R.string.status_since, formatUtcHourMinute(selection.since)),
+            )
+        }
+        val queueLine = context.getString(R.string.status_queue, snapshot.queuedTapCount.toString(), versionName())
+        return (selectionLines + stateLine(snapshot, now) + queueLine).joinToString("\n")
+    }
+
+    private fun stateLine(snapshot: WidgetSnapshot, now: Instant): String {
+        val asOf = snapshot.fetchedAt ?: now
+        val oldestUnsent = snapshot.oldestUnsentTapAt
+        val pending = snapshot.pendingTapAt
+        val sentAt = snapshot.sentAt
+        val savedAt = snapshot.savedAt
+        val refreshedAt = snapshot.fetchedAt
+        val roundTripMillis = snapshot.roundTripMillis
+        val outcome = snapshot.outcome
+        return when {
+            oldestUnsent != null -> context.getString(R.string.status_waiting_for_network, formatUtcHourMinuteSecond(oldestUnsent))
+            pending != null -> context.getString(R.string.status_saving, formatUtcHourMinuteSecond(sentAt ?: pending))
+            outcome is WidgetOutcome.Rejected -> context.getString(R.string.status_server_rejected, outcome.message)
+            outcome == WidgetOutcome.Unreachable -> context.getString(R.string.status_unreachable, formatUtcHourMinute(asOf))
+            savedAt != null && roundTripMillis != null && (refreshedAt == null || savedAt >= refreshedAt) -> context.getString(
+                R.string.status_saved,
+                formatUtcHourMinuteSecond(savedAt),
+                String.format(Locale.ROOT, "%.1f", roundTripMillis / MILLIS_PER_SECOND),
+            )
+            else -> context.getString(R.string.status_updated, formatUtcHourMinuteSecond(asOf))
+        }
+    }
+
+    private fun versionName(): String =
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty()
 
     private fun buildRow(rowIndex: Int, project: String, snapshot: WidgetSnapshot): RemoteViews {
         val row = RemoteViews(context.packageName, R.layout.widget_grid_row)
@@ -47,8 +79,11 @@ class SelectionWidgetRemoteViewsFactory(private val context: Context) {
                 ActivityKind.WORK -> R.id.cell_work
                 ActivityKind.MEETING -> R.id.cell_meeting
             }
-            val visual = resolveCellVisual(cell, snapshot.selection, snapshot.sending)
-            row.setImageViewResource(iconViewId(viewId), drawableFor(visual))
+            val selected = snapshot.selection?.cell == cell
+            row.setImageViewResource(
+                iconViewId(viewId),
+                if (selected) R.drawable.cell_selected else R.drawable.cell_unselected,
+            )
             row.setOnClickPendingIntent(viewId, tapPendingIntent(rowIndex, cell))
         }
         return row
@@ -57,12 +92,6 @@ class SelectionWidgetRemoteViewsFactory(private val context: Context) {
     private fun iconViewId(cellViewId: Int): Int = when (cellViewId) {
         R.id.cell_work -> R.id.cell_work_icon
         else -> R.id.cell_meeting_icon
-    }
-
-    private fun drawableFor(visual: CellVisual): Int = when (visual) {
-        CellVisual.UNSELECTED -> R.drawable.cell_unselected
-        CellVisual.SELECTED -> R.drawable.cell_selected
-        CellVisual.SENDING -> R.drawable.cell_sending
     }
 
     private fun tapPendingIntent(rowIndex: Int, cell: CellKey): PendingIntent {
@@ -80,24 +109,7 @@ class SelectionWidgetRemoteViewsFactory(private val context: Context) {
         )
     }
 
-    private fun statusTextOf(status: WidgetStatus): String = when (status) {
-        is WidgetStatus.Recording -> context.getString(
-            R.string.status_recording,
-            status.selection.cell.project,
-            status.selection.cell.activity.code,
-            formatUtcHourMinute(status.selection.since),
-        )
-        WidgetStatus.NotRecording -> context.getString(R.string.status_not_recording)
-        WidgetStatus.WaitingForNetwork -> context.getString(R.string.status_waiting_for_network)
-        is WidgetStatus.Switching -> context.getString(
-            R.string.status_switching,
-            status.cell.project,
-            status.cell.activity.code,
-        )
-        is WidgetStatus.Unreachable -> context.getString(
-            R.string.status_unreachable,
-            formatUtcHourMinute(status.asOf),
-        )
-        is WidgetStatus.ServerRejected -> context.getString(R.string.status_server_rejected, status.message)
+    private companion object {
+        const val MILLIS_PER_SECOND = 1000.0
     }
 }

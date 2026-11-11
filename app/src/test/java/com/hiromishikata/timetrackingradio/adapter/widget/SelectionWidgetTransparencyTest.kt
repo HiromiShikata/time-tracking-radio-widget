@@ -33,9 +33,9 @@ class SelectionWidgetTransparencyTest {
     )
 
     private class Rendered(val root: View, val bitmap: Bitmap) {
-        fun pixelAt(view: View): Int {
-            var x = view.width / 2
-            var y = view.height / 2
+        fun pixelAt(view: View, dx: Int = view.width / 2, dy: Int = view.height / 2): Int {
+            var x = dx
+            var y = dy
             var current: View = view
             while (current !== root) {
                 x += current.left
@@ -81,13 +81,24 @@ class SelectionWidgetTransparencyTest {
     }
 
     @Test
-    fun gridLinesStayWhite() {
+    fun gridDividersAndTableFramesAreAbsent() {
         val rendered = render()
-        val headerBlank = rendered.root.findViewById<View>(R.id.header_blank)
-        val verticalLine = (headerBlank.parent as ViewGroup).getChildAt(
-            (headerBlank.parent as ViewGroup).indexOfChild(headerBlank) + 1,
+        val grid = rendered.root.findViewById<ViewGroup>(R.id.grid_rows)
+        val firstRow = grid.getChildAt(0)
+        val secondRow = grid.getChildAt(1)
+        val workCell = firstRow.findViewById<View>(R.id.cell_work)
+        val meetingCell = firstRow.findViewById<View>(R.id.cell_meeting)
+        val frameless = listOf(
+            "header blank" to rendered.root.findViewById<View>(R.id.header_blank),
+            "rows container" to grid,
+            "first row" to firstRow,
+            "work cell" to workCell,
+            "meeting cell" to meetingCell,
         )
-        assertEquals("vertical grid line pixel", Color.WHITE, rendered.pixelAt(verticalLine))
+        frameless.forEach { (name, view) -> assertNull("$name background", view.background) }
+        assertEquals("pixel inside the work cell at the seam", Color.TRANSPARENT, rendered.pixelAt(workCell, dx = workCell.width - 1))
+        assertEquals("pixel inside the meeting cell at the seam", Color.TRANSPARENT, rendered.pixelAt(meetingCell, dx = 0))
+        assertEquals("pixel between the first and second row", Color.TRANSPARENT, rendered.pixelAt(secondRow, dy = 0))
     }
 
     private companion object {

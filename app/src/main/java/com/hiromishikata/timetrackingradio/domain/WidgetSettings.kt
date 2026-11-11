@@ -3,7 +3,7 @@ package com.hiromishikata.timetrackingradio.domain
 import java.net.URI
 import java.net.URISyntaxException
 
-data class WidgetSettings(val endpointUrl: String, val projects: List<String>)
+data class WidgetSettings(val endpointUrl: String, val projects: List<String>, val showStatusDetails: Boolean = true)
 
 enum class WidgetSettingsProblem {
     ENDPOINT_EMPTY,

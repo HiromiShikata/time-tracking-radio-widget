@@ -13,6 +13,7 @@ import com.hiromishikata.timetrackingradio.domain.WidgetSnapshotRepository
 import com.hiromishikata.timetrackingradio.domain.applySelectionResponse
 import com.hiromishikata.timetrackingradio.domain.markUnreachable
 import com.hiromishikata.timetrackingradio.domain.resolveTapRequest
+import java.time.Duration
 import java.time.Instant
 
 class WidgetSelectionUpdateUseCase(
@@ -34,8 +35,13 @@ class WidgetSelectionUpdateUseCase(
         val sending = previous.copy(sending = request)
         snapshots.write(sending)
         val finished = try {
+            val sentAt = clock()
             afterSendingStarted()
-            applySelectionResponse(post(), sending, clock()).copy(sending = null)
+            val response = post()
+            val respondedAt = clock()
+            applySelectionResponse(response, sending, respondedAt)
+                .withRoundTrip(response, sentAt, respondedAt)
+                .copy(sending = null)
         } catch (failure: NetworkUnavailableException) {
             snapshots.write(sending.copy(outcome = WidgetOutcome.WaitingForNetwork))
             throw failure
@@ -48,4 +54,13 @@ class WidgetSelectionUpdateUseCase(
         snapshots.write(finished)
         return finished
     }
+
+    private fun WidgetSnapshot.withRoundTrip(response: SelectionResponse, sentAt: Instant, respondedAt: Instant): WidgetSnapshot =
+        when (response) {
+            is SelectionResponse.Accepted -> copy(
+                savedAt = respondedAt,
+                roundTripMillis = Duration.between(sentAt, respondedAt).toMillis(),
+            )
+            is SelectionResponse.Rejected -> this
+        }
 }

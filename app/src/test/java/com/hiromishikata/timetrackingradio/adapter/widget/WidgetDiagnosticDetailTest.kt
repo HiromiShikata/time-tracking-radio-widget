@@ -2,7 +2,6 @@ package com.hiromishikata.timetrackingradio.adapter.widget
 
 import android.content.Context
 import android.net.ConnectivityManager
-import com.hiromishikata.timetrackingradio.R
 import com.hiromishikata.timetrackingradio.TestApplication
 import com.hiromishikata.timetrackingradio.adapter.http.FakeHttpTransport
 import com.hiromishikata.timetrackingradio.adapter.http.HttpResponse
@@ -64,10 +63,11 @@ class WidgetDiagnosticDetailTest {
         controller.render()
         controller.render()
         controller.acceptQueuedTap(meeting) { at, request -> WidgetWorkScheduler.buildTapRequest(meeting, at, request) }
+        val version = checkNotNull(context.packageManager.getPackageInfo(context.packageName, 0).versionName)
         assertEquals(
             listOf(
-                context.getString(R.string.status_not_recording),
-                context.getString(R.string.status_waiting_for_network),
+                "Not recording\nUpdated 02:19:03\nQueue 0 · app $version",
+                "Recording project-a / meeting\nsince 02:19 UTC\nSaving… sent 02:19:03\nQueue 1 · app $version",
             ),
             log().readAll().filter { it.type == DiagnosticEventType.WIDGET_STATUS }.map { it.detail }.reversed(),
         )

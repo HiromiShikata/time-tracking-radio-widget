@@ -14,6 +14,7 @@ import android.util.Log
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.ActivityCompat
@@ -76,8 +77,14 @@ class SettingsActivity : Activity() {
             endpointInput.setText(settings.endpointUrl)
             projectsInput.setText(settings.projects.joinToString("\n"))
         }
+        val statusDetailsSwitch = findViewById<Switch>(R.id.show_status_details_switch)
+        statusDetailsSwitch.isChecked = settingsRepository.readShowStatusDetails()
+        statusDetailsSwitch.setOnCheckedChangeListener { _, checked ->
+            settingsRepository.writeShowStatusDetails(checked)
+            SelectionWidgetProvider.requestUpdate(this)
+        }
         findViewById<Button>(R.id.save_button).setOnClickListener {
-            save(endpointInput.text.toString(), projectsInput.text.toString())
+            save(endpointInput.text.toString(), projectsInput.text.toString(), statusDetailsSwitch.isChecked)
         }
         findViewById<Button>(R.id.copy_log_button).setOnClickListener { copyLog() }
         findViewById<TextView>(R.id.log_text).movementMethod = ScrollingMovementMethod.getInstance()
@@ -136,8 +143,8 @@ class SettingsActivity : Activity() {
         startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName))
     }
 
-    private fun save(endpointUrl: String, projectsText: String) {
-        when (val validation = WidgetSettingsUpdateUseCase(settingsRepository).execute(endpointUrl, projectsText)) {
+    private fun save(endpointUrl: String, projectsText: String, showStatusDetails: Boolean) {
+        when (val validation = WidgetSettingsUpdateUseCase(settingsRepository).execute(endpointUrl, projectsText, showStatusDetails)) {
             is WidgetSettingsValidation.Invalid -> Toast.makeText(
                 this,
                 validation.problems.joinToString("\n") { getString(problemMessage(it)) },
