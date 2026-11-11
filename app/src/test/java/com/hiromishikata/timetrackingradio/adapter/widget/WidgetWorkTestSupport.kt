@@ -272,7 +272,6 @@ internal fun awaitCondition(what: String, timeoutMillis: Long = 30_000, conditio
 internal fun pendingWidgetWorkIds(context: Context): Set<UUID> =
     allWidgetWorkInfos(context).filterNot { it.state.isFinished }.map { it.id }.toSet()
 
-/** Meets the constraints of the work that was not pending when [known] was taken, so older retries keep their delay. */
 internal fun meetConstraintsOfWidgetWorkNotIn(context: Context, known: Set<UUID>) {
     val driver = checkNotNull(WorkManagerTestInitHelper.getTestDriver(context))
     allWidgetWorkInfos(context).filterNot { it.state.isFinished || it.id in known }.forEach { driver.setAllConstraintsMet(it.id) }

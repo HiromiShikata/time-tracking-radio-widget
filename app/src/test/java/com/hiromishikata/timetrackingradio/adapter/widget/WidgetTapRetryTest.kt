@@ -50,7 +50,6 @@ class WidgetTapRetryTest {
     private val second = CellKey("project-b", ActivityKind.WORK)
     private lateinit var executor: ExecutorService
 
-    /** Fails every POST for [project] while [failing] is set; counts the POSTs that were answered. */
     private inner class ProjectNetwork(private val project: String) {
         val failing = AtomicBoolean(true)
         private val failed = AtomicInteger()
@@ -98,6 +97,7 @@ class WidgetTapRetryTest {
         repeat(ATTEMPTS) { index ->
             val attempt = index + 1
             awaitCondition("attempt $attempt to fail and schedule its next attempt", timeoutMillis = 150_000) {
+                meetConstraintsOfAllWidgetWork(context)
                 val infos = allWidgetWorkInfos(context)
                 network.posts() >= attempt &&
                     infos.none { it.state == WorkInfo.State.RUNNING } &&
@@ -210,10 +210,6 @@ class WidgetTapRetryTest {
         }
     }
 
-    /**
-     * A tap queued by the earlier version sits in the unique selection chain behind a long initial delay, which is
-     * the state a long exponential backoff left it in. The input keys are the ones that version wrote.
-     */
     private fun assertTheBackedOffTapIsSentAfter(trigger: () -> Unit) {
         val network = ProjectNetwork(first.project).apply { failing.set(false) }
         installTransport(network.transport)

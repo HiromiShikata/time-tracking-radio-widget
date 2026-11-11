@@ -14,6 +14,7 @@ import com.hiromishikata.timetrackingradio.adapter.http.HttpUrlConnectionTranspo
 import androidx.work.testing.TestListenableWorkerBuilder
 import com.hiromishikata.timetrackingradio.TestApplication
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueDiagnosticLogRepository
+import com.hiromishikata.timetrackingradio.adapter.widget.installWorkManagerForTests
 import com.hiromishikata.timetrackingradio.adapter.widget.widgetPreferences
 import com.hiromishikata.timetrackingradio.domain.CommunicationFailedException
 import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
@@ -56,6 +57,7 @@ class UpdateCheckWorkerTest {
 
     @Test
     fun aDownloadFailedForANetworkReasonIsRetriedWithinFiveMinutesAndTheRetryIsRecorded() {
+        installWorkManagerForTests(context)
         Shadows.shadowOf(context as Application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
         UpdateCheckWorker.releaseRepositoryFactory = {
             object : ReleaseRepository {

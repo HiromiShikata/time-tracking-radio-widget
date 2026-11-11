@@ -14,6 +14,7 @@ class SelectionWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         controllerFactory(context).render()
         WidgetWorkScheduler.enqueueRefresh(context)
+        WidgetWorkScheduler.kickPendingTaps(context)
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -38,6 +39,7 @@ class SelectionWidgetProvider : AppWidgetProvider() {
             controller.discardTap(cell, queued.accepted.tappedAt)
             throw failure
         }
+        WidgetWorkScheduler.kickPendingTaps(context)
     }
 
     companion object {

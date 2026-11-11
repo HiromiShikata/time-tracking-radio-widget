@@ -42,7 +42,11 @@ class UpdateCheckWorker(context: Context, parameters: WorkerParameters) : Corout
                 Log.w(TAG, "update check failed; it will be retried")
                 Result.retry()
             }
-            UpdateCheckStatus.RETRY_DOWNLOAD -> Result.success()
+            UpdateCheckStatus.RETRY_DOWNLOAD -> {
+                Log.w(TAG, "update download failed for a network reason; a retry is scheduled")
+                UpdateCheckScheduler.enqueueDownloadRetry(applicationContext, inputData.getInt(KEY_DOWNLOAD_ATTEMPT, 0) + 1)
+                Result.success()
+            }
             UpdateCheckStatus.FAILED -> {
                 Log.e(TAG, "installed version is not x.y.z: $installedName")
                 Result.failure()
@@ -52,6 +56,7 @@ class UpdateCheckWorker(context: Context, parameters: WorkerParameters) : Corout
 
     companion object {
         private const val TAG = "UpdateCheckWorker"
+        const val KEY_DOWNLOAD_ATTEMPT = "downloadAttempt"
         const val LATEST_RELEASE_URL = "https://api.github.com/repos/HiromiShikata/time-tracking-radio-widget/releases/latest"
 
         var downloaderFactory: (File) -> ApkDownloadRepository = { ApkDownloader(it) }

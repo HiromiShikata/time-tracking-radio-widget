@@ -33,6 +33,7 @@ import com.hiromishikata.timetrackingradio.adapter.update.UpdateCheckScheduler
 import com.hiromishikata.timetrackingradio.adapter.update.UpdateNotifier
 import com.hiromishikata.timetrackingradio.adapter.update.updateDiagnosticRecorder
 import com.hiromishikata.timetrackingradio.adapter.widget.SelectionWidgetProvider
+import com.hiromishikata.timetrackingradio.adapter.widget.WidgetWorkScheduler
 import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
 import com.hiromishikata.timetrackingradio.domain.ConnectionCheckResult
 import com.hiromishikata.timetrackingradio.domain.DiagnosticRecorder
@@ -67,6 +68,7 @@ class SettingsActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
         setResult(RESULT_CANCELED)
+        kickPendingTaps()
         val endpointInput = findViewById<EditText>(R.id.endpoint_input)
         val projectsInput = findViewById<EditText>(R.id.projects_input)
         WidgetSettingsReadUseCase(settingsRepository).execute()?.let { settings ->
@@ -105,6 +107,16 @@ class SettingsActivity : Activity() {
         } catch (failure: Exception) {
             val detail = describeFailure(failure)
             Log.e(TAG, "foreground update check was not enqueued: $detail")
+            updateDiagnosticRecorder(this).record(DiagnosticEventType.EXCEPTION, detail)
+        }
+    }
+
+    private fun kickPendingTaps() {
+        try {
+            WidgetWorkScheduler.kickPendingTaps(this)
+        } catch (failure: Exception) {
+            val detail = describeFailure(failure)
+            Log.e(TAG, "pending taps were not kicked: $detail")
             updateDiagnosticRecorder(this).record(DiagnosticEventType.EXCEPTION, detail)
         }
     }

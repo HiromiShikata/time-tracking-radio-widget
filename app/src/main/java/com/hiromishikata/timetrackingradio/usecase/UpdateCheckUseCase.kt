@@ -60,7 +60,7 @@ class UpdateCheckUseCase(
             downloads.download(decision.apkDownloadUrl, decision.apkSizeBytes, decision.version)
         } catch (failure: ApkDownloadException) {
             recordCheck(installedName, latestText, DECISION_NEWER_AVAILABLE, DOWNLOAD_FAILED, failure.message.orEmpty(), permitted, false)
-            return UpdateCheckStatus.RETRY
+            return if (failure.networkReason) UpdateCheckStatus.RETRY_DOWNLOAD else UpdateCheckStatus.RETRY
         }
         val notified = try {
             announcer.announce(decision.version, apk)

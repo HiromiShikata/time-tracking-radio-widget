@@ -3,6 +3,10 @@ package com.hiromishikata.timetrackingradio.adapter.update
 import android.content.Context
 import android.util.Log
 import androidx.work.Constraints
+import androidx.work.workDataOf
+import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
+import com.hiromishikata.timetrackingradio.domain.RetryKind
+import com.hiromishikata.timetrackingradio.domain.retryScheduledDetail
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
@@ -27,6 +31,7 @@ object UpdateCheckScheduler {
     private const val FOREGROUND_CHECK_KEY = "last_foreground_update_check_at"
     private const val TAG = "UpdateCheckScheduler"
     private val foregroundThrottle: Duration = Duration.ofSeconds(60)
+    private const val DOWNLOAD_RETRY_DELAY_MINUTES = 5L
 
     fun schedule(context: Context) {
         val request = PeriodicWorkRequestBuilder<UpdateCheckWorker>(INTERVAL_HOURS, TimeUnit.HOURS)
@@ -48,6 +53,20 @@ object UpdateCheckScheduler {
             .build()
         WorkManager.getInstance(context)
             .enqueueUniqueWork(ON_DEMAND_WORK_NAME, ExistingWorkPolicy.KEEP, request)
+    }
+
+    fun enqueueDownloadRetry(context: Context, attempt: Int) {
+        updateDiagnosticRecorder(context).record(
+            DiagnosticEventType.RETRY_SCHEDULED,
+            retryScheduledDetail(RetryKind.UPDATE_DOWNLOAD, attempt, DOWNLOAD_RETRY_DELAY_MINUTES * 60),
+        )
+        val request = OneTimeWorkRequestBuilder<UpdateCheckWorker>()
+            .setInputData(workDataOf(UpdateCheckWorker.KEY_DOWNLOAD_ATTEMPT to attempt))
+            .setInitialDelay(DOWNLOAD_RETRY_DELAY_MINUTES, TimeUnit.MINUTES)
+            .setConstraints(connectedConstraints())
+            .build()
+        WorkManager.getInstance(context)
+            .enqueueUniqueWork(DOWNLOAD_RETRY_UNIQUE_WORK_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
     }
 
     fun enqueueForegroundCheckIfDue(context: Context, now: Instant) {

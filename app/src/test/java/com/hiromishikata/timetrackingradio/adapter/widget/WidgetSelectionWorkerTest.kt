@@ -547,9 +547,9 @@ class WidgetSelectionWorkerTest {
         val cases = listOf(
             Case("a finished selection", EchoSelectionTransport(), ListenableWorker.Result.Success::class.java, 1),
             Case(
-                "a selection that asks for a retry",
+                "a selection that is retried by a scheduled drain",
                 FailingTapTransport(IOException("unexpected end of stream"), false),
-                ListenableWorker.Result.Retry::class.java,
+                ListenableWorker.Result.Success::class.java,
                 0,
             ),
         )

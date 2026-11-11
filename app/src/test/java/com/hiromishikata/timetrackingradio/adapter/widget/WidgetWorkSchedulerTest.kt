@@ -177,7 +177,7 @@ class WidgetWorkSchedulerTest {
         meetConstraintsOnceQueued(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
         assertTrue("the first attempt was made", failedFirstAttempt.await(30, TimeUnit.SECONDS))
         awaitUniqueWork(context, WidgetWorkScheduler.DRAIN_RETRY_UNIQUE_WORK_NAME, "the tap's retry being scheduled") { infos ->
-            infos.single().state == WorkInfo.State.ENQUEUED
+            infos.any { it.state == WorkInfo.State.ENQUEUED }
         }
         val waiting = rendered.last()
         assertEquals("the ring stays on the waiting cell", SelectionRequest.Select(first), waiting.sending)
@@ -213,7 +213,7 @@ class WidgetWorkSchedulerTest {
         meetConstraintsOnceQueued(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
         assertTrue("the first attempt was made", failedFirstAttempt.await(30, TimeUnit.SECONDS))
         awaitUniqueWork(context, WidgetWorkScheduler.DRAIN_RETRY_UNIQUE_WORK_NAME, "the tap's retry being scheduled") { infos ->
-            infos.single().state == WorkInfo.State.ENQUEUED
+            infos.any { it.state == WorkInfo.State.ENQUEUED }
         }
         clock.set(TEST_TAPPED_AT.plusSeconds(11 * 60))
         val rendered = mutableListOf<WidgetSnapshot>()
