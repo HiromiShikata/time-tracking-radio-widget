@@ -16,6 +16,8 @@ class KeyValueWidgetSnapshotRepository(private val store: KeyValueStore) : Widge
         outcome = readOutcome(),
         sending = readSending(),
         statusRequest = null,
+        savedAt = store.read(SAVED_AT_KEY)?.let(Instant::parse),
+        roundTripMillis = store.read(ROUND_TRIP_MILLIS_KEY)?.toLong(),
     )
 
     override fun write(snapshot: WidgetSnapshot) {
@@ -23,6 +25,8 @@ class KeyValueWidgetSnapshotRepository(private val store: KeyValueStore) : Widge
         store.write(FETCHED_AT_KEY, snapshot.fetchedAt?.toString())
         writeOutcome(snapshot.outcome)
         writeSending(snapshot.sending)
+        store.write(SAVED_AT_KEY, snapshot.savedAt?.toString())
+        store.write(ROUND_TRIP_MILLIS_KEY, snapshot.roundTripMillis?.toString())
     }
 
     private fun readSelection(): Selection? {
@@ -95,6 +99,8 @@ class KeyValueWidgetSnapshotRepository(private val store: KeyValueStore) : Widge
         const val SENDING_PROJECT_KEY = "sending_project"
         const val SENDING_ACTIVITY_KEY = "sending_activity"
         const val SENDING_SELECT = "select"
+        const val SAVED_AT_KEY = "saved_at"
+        const val ROUND_TRIP_MILLIS_KEY = "round_trip_millis"
         const val SENDING_CLEAR = "clear"
     }
 }

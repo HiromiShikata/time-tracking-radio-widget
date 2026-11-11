@@ -24,6 +24,7 @@ data class QueuedTap(
     val workEnqueued: Boolean,
     val waiting: Boolean,
     val workId: UUID?,
+    val sentAt: Instant? = null,
 )
 
 class KeyValueQueuedTapRepository(private val store: KeyValueStore) {
@@ -39,6 +40,7 @@ class KeyValueQueuedTapRepository(private val store: KeyValueStore) {
                 entry[WORK_ENQUEUED_FIELD]?.jsonPrimitive?.booleanOrNull ?: false,
                 entry[WAITING_FIELD]?.jsonPrimitive?.booleanOrNull ?: false,
                 entry[WORK_ID_FIELD]?.jsonPrimitive?.contentOrNull?.let(UUID::fromString),
+                entry[SENT_AT_FIELD]?.jsonPrimitive?.contentOrNull?.let(Instant::parse),
             )
         }
     }
@@ -60,6 +62,7 @@ class KeyValueQueuedTapRepository(private val store: KeyValueStore) {
                             put(WORK_ENQUEUED_FIELD, entry.workEnqueued)
                             put(WAITING_FIELD, entry.waiting)
                             put(WORK_ID_FIELD, entry.workId?.toString())
+                            put(SENT_AT_FIELD, entry.sentAt?.toString())
                         },
                     )
                 }
@@ -89,5 +92,6 @@ class KeyValueQueuedTapRepository(private val store: KeyValueStore) {
         const val WORK_ENQUEUED_FIELD = "work_enqueued"
         const val WAITING_FIELD = "waiting"
         const val WORK_ID_FIELD = "work_id"
+        const val SENT_AT_FIELD = "sent_at"
     }
 }

@@ -16,14 +16,8 @@
             android:layout_weight="1.4"
             android:gravity="center_vertical"
             android:paddingHorizontal="8dp"
-            android:textColor="@color/white"
-            android:textSize="16sp"
-            android:textStyle="bold" />
-
-        <FrameLayout
-            android:layout_width="1dp"
-            android:layout_height="match_parent"
-            android:background="@color/white" />
+            android:textColor="@color/widget_gray"
+            android:textSize="12sp" />
 
         <FrameLayout
             android:id="@+id/cell_work"
@@ -34,17 +28,12 @@
 
             <ImageView
                 android:id="@+id/cell_work_icon"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:layout_gravity="center"
                 android:contentDescription="@null"
                 android:scaleType="fitXY" />
         </FrameLayout>
-
-        <FrameLayout
-            android:layout_width="1dp"
-            android:layout_height="match_parent"
-            android:background="@color/white" />
 
         <FrameLayout
             android:id="@+id/cell_meeting"
@@ -55,16 +44,11 @@
 
             <ImageView
                 android:id="@+id/cell_meeting_icon"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
                 android:layout_gravity="center"
                 android:contentDescription="@null"
                 android:scaleType="fitXY" />
         </FrameLayout>
     </LinearLayout>
-
-    <FrameLayout
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="@color/white" />
 </LinearLayout>

@@ -70,6 +70,15 @@
             android:padding="12dp"
             android:textColor="@color/white" />
 
+        <Switch
+            android:id="@+id/show_status_details_switch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/show_status_details_label"
+            android:textColor="@color/white"
+            android:textSize="16sp" />
+
         <Button
             android:id="@+id/save_button"
             android:layout_width="match_parent"
