@@ -80,7 +80,7 @@ class WidgetWorkBelowAndroid12Test {
         WidgetSelectionWorker.controllerFactory = factory
 
         SelectionWidgetProvider().onReceive(context, cellTapIntent(meeting.project, meeting.activity.code))
-        driveUniqueWorkToFinish(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
+        driveAllWidgetWorkToFinish(context)
 
         assertEquals("work state", WorkInfo.State.SUCCEEDED, uniqueWorkInfos(context, WidgetSelectionWorker.UNIQUE_WORK_NAME).single().state)
         val posts = transport.requests.filter { it.method == "POST" }

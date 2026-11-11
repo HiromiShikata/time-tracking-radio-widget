@@ -20,6 +20,11 @@ import java.util.concurrent.TimeUnit
 object WidgetWorkScheduler {
     private const val TAP_RETRY_INITIAL_BACKOFF_SECONDS = 10L
 
+    const val DRAIN_UNIQUE_WORK_NAME = "widget-drain"
+    const val DRAIN_RETRY_UNIQUE_WORK_NAME = "widget-drain-retry"
+
+    fun kickPendingTaps(context: Context) = Unit
+
     fun buildTapRequest(cell: CellKey, tappedAt: Instant, request: SelectionRequest): OneTimeWorkRequest {
         require(request !is SelectionRequest.Select || request.cell == cell) { "a tap's selection request names another cell" }
         return OneTimeWorkRequestBuilder<WidgetSelectionWorker>()

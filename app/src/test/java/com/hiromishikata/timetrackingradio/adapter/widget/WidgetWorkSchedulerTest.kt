@@ -52,7 +52,7 @@ class WidgetWorkSchedulerTest {
     @After
     fun tearDown() {
         try {
-            driveUniqueWorkToFinish(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
+            driveAllWidgetWorkToFinish(context)
             awaitWorkFinished(context, WidgetDiagnosticsUploadWorker.UNIQUE_WORK_NAME)
         } finally {
             restoreDefaultWidgetFactories()
@@ -158,35 +158,6 @@ class WidgetWorkSchedulerTest {
     }
 
     @Test
-    fun aLaterTapWaitsBehindATapThatIsRetrying() {
-        val failedFirstAttempt = CountDownLatch(1)
-        val failFirstAttempt = AtomicBoolean(true)
-        val transport = EchoSelectionTransport { request ->
-            if (request.method == "POST" && selectedProjectOf(request) == first.project && failFirstAttempt.getAndSet(false)) {
-                failedFirstAttempt.countDown()
-                throw UnknownHostException("unreachable.example")
-            }
-        }
-        WidgetSelectionWorker.controllerFactory = { WidgetController(it, { transport }, { transport }, publish = { _, _ -> }) }
-        SelectionWidgetProvider().onReceive(context, cellTapIntent(first.project, first.activity.code))
-        SelectionWidgetProvider().onReceive(context, cellTapIntent(second.project, second.activity.code))
-        meetConstraintsOnceQueued(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
-        assertTrue("the first attempt was made", failedFirstAttempt.await(30, TimeUnit.SECONDS))
-        awaitUniqueWork(context, WidgetSelectionWorker.UNIQUE_WORK_NAME, "the first tap waiting for a retry") { infos ->
-            infos.size == 2 && infos.map { it.state }.toSet() == setOf(WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED)
-        }
-        assertTrue(
-            "the later tap was posted while the earlier tap was waiting",
-            transport.requests.none { it.method == "POST" && selectedProjectOf(it) == second.project },
-        )
-        driveUniqueWorkToFinish(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
-        assertEquals(
-            listOf("project-a", "project-a", "project-b"),
-            transport.requests.filter { it.method == "POST" }.map { selectedProjectOf(it) },
-        )
-    }
-
-    @Test
     fun aTapWaitingForTheNetworkKeepsItsRingAndShowsTheWaitingStatusUntilItIsSent() {
         val failedFirstAttempt = CountDownLatch(1)
         val failFirstAttempt = AtomicBoolean(true)
@@ -205,7 +176,7 @@ class WidgetWorkSchedulerTest {
         SelectionWidgetProvider().onReceive(context, cellTapIntent(first.project, first.activity.code))
         meetConstraintsOnceQueued(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
         assertTrue("the first attempt was made", failedFirstAttempt.await(30, TimeUnit.SECONDS))
-        awaitUniqueWork(context, WidgetSelectionWorker.UNIQUE_WORK_NAME, "the tap waiting for a retry") { infos ->
+        awaitUniqueWork(context, WidgetWorkScheduler.DRAIN_RETRY_UNIQUE_WORK_NAME, "the tap's retry being scheduled") { infos ->
             infos.single().state == WorkInfo.State.ENQUEUED
         }
         val waiting = rendered.last()
@@ -215,7 +186,7 @@ class WidgetWorkSchedulerTest {
         val waitingStatus = renderedStatusText(context, waiting)
         assertTrue("status=$waitingStatus", WAITING_FOR_NETWORK_TEXT.containsMatchIn(waitingStatus))
 
-        driveUniqueWorkToFinish(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
+        driveAllWidgetWorkToFinish(context)
         val sent = rendered.last()
         assertNull("the ring is gone once the tap is sent", sent.sending)
         val sentStatus = renderedStatusText(context, sent)
@@ -241,7 +212,7 @@ class WidgetWorkSchedulerTest {
         SelectionWidgetProvider().onReceive(context, cellTapIntent(first.project, first.activity.code))
         meetConstraintsOnceQueued(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
         assertTrue("the first attempt was made", failedFirstAttempt.await(30, TimeUnit.SECONDS))
-        awaitUniqueWork(context, WidgetSelectionWorker.UNIQUE_WORK_NAME, "the tap waiting for a retry") { infos ->
+        awaitUniqueWork(context, WidgetWorkScheduler.DRAIN_RETRY_UNIQUE_WORK_NAME, "the tap's retry being scheduled") { infos ->
             infos.single().state == WorkInfo.State.ENQUEUED
         }
         clock.set(TEST_TAPPED_AT.plusSeconds(11 * 60))

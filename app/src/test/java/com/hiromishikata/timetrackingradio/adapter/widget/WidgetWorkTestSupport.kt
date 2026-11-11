@@ -41,6 +41,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import java.util.UUID
 
 internal val WIDGET_TEST_SETTINGS = WidgetSettings("https://example.com/exec?key=example", listOf("project-a", "project-b"))
 
@@ -223,4 +224,56 @@ internal fun restoreDefaultWidgetFactories() {
     SelectionWidgetProvider.controllerFactory = { WidgetController(it) }
     WidgetSelectionWorker.controllerFactory = { WidgetController(it) }
     WidgetDiagnosticsUploadWorker.controllerFactory = { WidgetController(it) }
+}
+
+internal val WIDGET_WORK_NAMES: List<String>
+    get() = listOf(
+        WidgetSelectionWorker.UNIQUE_WORK_NAME,
+        WidgetWorkScheduler.DRAIN_UNIQUE_WORK_NAME,
+        WidgetWorkScheduler.DRAIN_RETRY_UNIQUE_WORK_NAME,
+    )
+
+internal fun allWidgetWorkInfos(context: Context): List<WorkInfo> = WIDGET_WORK_NAMES.flatMap { uniqueWorkInfos(context, it) }
+
+internal fun meetConstraintsOfAllWidgetWork(context: Context) {
+    val driver = checkNotNull(WorkManagerTestInitHelper.getTestDriver(context))
+    allWidgetWorkInfos(context).filterNot { it.state.isFinished }.forEach { driver.setAllConstraintsMet(it.id) }
+}
+
+internal fun meetConstraintsAndDelaysOfAllWidgetWork(context: Context) {
+    val driver = checkNotNull(WorkManagerTestInitHelper.getTestDriver(context))
+    allWidgetWorkInfos(context).filterNot { it.state.isFinished }.forEach { info ->
+        driver.setAllConstraintsMet(info.id)
+        driver.setInitialDelayMet(info.id)
+    }
+}
+
+internal fun driveAllWidgetWorkToFinish(context: Context, timeoutMillis: Long = 60_000) {
+    val deadline = System.currentTimeMillis() + timeoutMillis
+    while (true) {
+        val infos = allWidgetWorkInfos(context)
+        if (infos.all { it.state.isFinished }) return
+        check(System.currentTimeMillis() < deadline) {
+            "widget work did not finish within $timeoutMillis ms; last states: ${infos.map { it.state }}"
+        }
+        meetConstraintsAndDelaysOfAllWidgetWork(context)
+        Thread.sleep(10)
+    }
+}
+
+internal fun awaitCondition(what: String, timeoutMillis: Long = 30_000, condition: () -> Boolean) {
+    val deadline = System.currentTimeMillis() + timeoutMillis
+    while (!condition()) {
+        check(System.currentTimeMillis() < deadline) { "$what did not happen within $timeoutMillis ms" }
+        Thread.sleep(10)
+    }
+}
+
+internal fun pendingWidgetWorkIds(context: Context): Set<UUID> =
+    allWidgetWorkInfos(context).filterNot { it.state.isFinished }.map { it.id }.toSet()
+
+/** Meets the constraints of the work that was not pending when [known] was taken, so older retries keep their delay. */
+internal fun meetConstraintsOfWidgetWorkNotIn(context: Context, known: Set<UUID>) {
+    val driver = checkNotNull(WorkManagerTestInitHelper.getTestDriver(context))
+    allWidgetWorkInfos(context).filterNot { it.state.isFinished || it.id in known }.forEach { driver.setAllConstraintsMet(it.id) }
 }

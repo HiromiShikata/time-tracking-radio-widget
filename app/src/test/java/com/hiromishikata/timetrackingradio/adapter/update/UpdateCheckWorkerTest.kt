@@ -1,6 +1,14 @@
 package com.hiromishikata.timetrackingradio.adapter.update
 
+import android.Manifest
+import android.app.Application
 import androidx.work.ListenableWorker
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import com.hiromishikata.timetrackingradio.domain.ApkDownloadException
+import com.hiromishikata.timetrackingradio.domain.ApkDownloadRepository
+import org.robolectric.Shadows
+import java.io.File
 import com.hiromishikata.timetrackingradio.adapter.http.HttpReleaseRepository
 import com.hiromishikata.timetrackingradio.adapter.http.HttpUrlConnectionTransport
 import androidx.work.testing.TestListenableWorkerBuilder
@@ -29,6 +37,7 @@ class UpdateCheckWorkerTest {
     @After
     fun tearDown() {
         UpdateCheckWorker.releaseRepositoryFactory = { HttpReleaseRepository(UpdateCheckWorker.LATEST_RELEASE_URL, HttpUrlConnectionTransport()) }
+        UpdateCheckWorker.downloaderFactory = { ApkDownloader(it) }
     }
 
     private fun runWorkerWith(repository: ReleaseRepository): ListenableWorker.Result {
@@ -43,6 +52,38 @@ class UpdateCheckWorkerTest {
             override fun readLatest(): LatestRelease = throw CommunicationFailedException("down")
         }
         assertTrue(runWorkerWith(repository) is ListenableWorker.Result.Retry)
+    }
+
+    @Test
+    fun aDownloadFailedForANetworkReasonIsRetriedWithinFiveMinutesAndTheRetryIsRecorded() {
+        Shadows.shadowOf(context as Application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        UpdateCheckWorker.releaseRepositoryFactory = {
+            object : ReleaseRepository {
+                override fun readLatest(): LatestRelease = LatestRelease(SemanticVersion(0, 0, 1), "https://example.com/app.apk", 4096L)
+            }
+        }
+        UpdateCheckWorker.downloaderFactory = {
+            object : ApkDownloadRepository {
+                override fun download(url: String, expectedSizeBytes: Long, version: SemanticVersion): File =
+                    throw ApkDownloadException("download failed: java.net.UnknownHostException", networkReason = true)
+            }
+        }
+        val result = TestListenableWorkerBuilder<UpdateCheckWorker>(context).build().startWork().get()
+        assertTrue("result=$result", result is ListenableWorker.Result.Success)
+        val retry = WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWork(UpdateCheckScheduler.DOWNLOAD_RETRY_UNIQUE_WORK_NAME).get().single()
+        assertEquals(WorkInfo.State.ENQUEUED, retry.state)
+        val delay = retry.nextScheduleTimeMillis - System.currentTimeMillis()
+        assertTrue("the download retry is $delay ms away, over five minutes", delay <= 300_000L + 1_000L)
+        val recorded = KeyValueDiagnosticLogRepository(widgetPreferences(context)).readAll()
+        assertTrue(
+            "no retry_scheduled entry for the download retry",
+            recorded.any {
+                it.type == DiagnosticEventType.RETRY_SCHEDULED &&
+                    it.detail.contains("kind=update_download") &&
+                    it.detail.contains("next_delay_seconds=300")
+            },
+        )
     }
 
     @Test

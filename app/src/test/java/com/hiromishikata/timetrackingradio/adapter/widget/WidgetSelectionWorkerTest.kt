@@ -66,6 +66,8 @@ class WidgetSelectionWorkerTest {
     private lateinit var transport: EchoSelectionTransport
     private val legacyCell = CellKey("project-a", ActivityKind.WORK)
 
+    private val SLACK_MILLIS = 1_000L
+
     private data class RunCase(val name: String, val input: Data, val expectedMethods: List<String>)
 
     private val updateCheckOnceWorkName = "app-update-check-once"
@@ -261,13 +263,13 @@ class WidgetSelectionWorkerTest {
     private data class FailureCase(val name: String, val failure: Throwable, val expectedResult: Class<out ListenableWorker.Result>)
 
     @Test
-    fun aNetworkLevelFailureOfATapRequestsARetryAndAnyOtherFailureDoesNot() {
+    fun aNetworkLevelFailureOfATapEndsTheWorkWithABoundedRetryAndAnyOtherFailureDoesNot() {
         val cases = listOf(
-            FailureCase("unknown host", UnknownHostException("unreachable.example"), ListenableWorker.Result.Retry::class.java),
-            FailureCase("timeout", SocketTimeoutException("timeout"), ListenableWorker.Result.Retry::class.java),
-            FailureCase("connection refused", ConnectException("Connection refused"), ListenableWorker.Result.Retry::class.java),
-            FailureCase("connection aborted", SocketException("Software caused connection abort"), ListenableWorker.Result.Retry::class.java),
-            FailureCase("TLS failure", SSLHandshakeException("handshake failed"), ListenableWorker.Result.Retry::class.java),
+            FailureCase("unknown host", UnknownHostException("unreachable.example"), ListenableWorker.Result.Success::class.java),
+            FailureCase("timeout", SocketTimeoutException("timeout"), ListenableWorker.Result.Success::class.java),
+            FailureCase("connection refused", ConnectException("Connection refused"), ListenableWorker.Result.Success::class.java),
+            FailureCase("connection aborted", SocketException("Software caused connection abort"), ListenableWorker.Result.Success::class.java),
+            FailureCase("TLS failure", SSLHandshakeException("handshake failed"), ListenableWorker.Result.Success::class.java),
             FailureCase("unexpected failure", IllegalStateException("unexpected"), ListenableWorker.Result.Success::class.java),
         )
         cases.forEach { case ->
@@ -275,6 +277,12 @@ class WidgetSelectionWorkerTest {
             transport = EchoSelectionTransport { throw case.failure }
             val result = runWorker(acceptedTapInput())
             assertEquals("case=${case.name} result=$result", case.expectedResult, result.javaClass)
+            if (case.failure !is IllegalStateException) {
+                assertTrue(
+                    "case=${case.name}: a network-level failure must leave a retry scheduled",
+                    uniqueWorkInfos(context, WidgetWorkScheduler.DRAIN_RETRY_UNIQUE_WORK_NAME).any { it.state == WorkInfo.State.ENQUEUED },
+                )
+            }
         }
     }
 
@@ -282,7 +290,7 @@ class WidgetSelectionWorkerTest {
     fun aTapWhoseNetworkAttemptFailsReturnsToTheWaitingStatusWithItsRingUntilTheNextAttempt() {
         transport = EchoSelectionTransport { throw UnknownHostException("unreachable.example") }
         val result = runWorker(acceptedTapInput())
-        assertTrue("result=$result", result is ListenableWorker.Result.Retry)
+        assertTrue("result=$result", result is ListenableWorker.Result.Success)
         val waiting = rendered.last()
         assertEquals("the ring stays on the waiting cell", SelectionRequest.Select(meeting), waiting.sending)
         assertEquals(R.drawable.cell_sending, renderedCellDrawableResId(context, waiting, meeting))
@@ -321,7 +329,7 @@ class WidgetSelectionWorkerTest {
                 WidgetController(it, { failing }, { EchoSelectionTransport() }, publish = { _, snapshot -> rendered += snapshot })
             }
             val result = runWorker(acceptedTapInput())
-            assertTrue("case=${case.name} result=$result", result is ListenableWorker.Result.Retry)
+            assertTrue("case=${case.name} result=$result", result is ListenableWorker.Result.Success)
             assertEquals("case=${case.name}", SelectionRequest.Select(meeting), widgetSnapshots(context).read().sending)
             assertEquals("case=${case.name}", SelectionRequest.Select(meeting), rendered.last().sending)
         }
@@ -376,7 +384,7 @@ class WidgetSelectionWorkerTest {
         }
         val input = acceptedTapInput()
         val first = runWorker(input)
-        assertTrue("first=$first", first is ListenableWorker.Result.Retry)
+        assertTrue("first=$first", first is ListenableWorker.Result.Success)
         widgetSnapshots(context).write(WidgetSnapshot(Selection(meeting, since), since, WidgetOutcome.Settled, null, null))
         val second = runWorker(input)
         assertTrue("second=$second", second is ListenableWorker.Result.Success)
@@ -422,7 +430,13 @@ class WidgetSelectionWorkerTest {
         rendered.clear()
         transport = EchoSelectionTransport { throw UnknownHostException("unreachable.example") }
         val result = runWorker(legacyTapInput())
-        assertTrue("result=$result", result is ListenableWorker.Result.Retry)
+        assertTrue("result=$result", result is ListenableWorker.Result.Success)
+        assertTrue(
+            "a legacy tap's retry must come back within the sixty-second bound",
+            uniqueWorkInfos(context, WidgetSelectionWorker.UNIQUE_WORK_NAME).any {
+                it.state == WorkInfo.State.ENQUEUED && it.nextScheduleTimeMillis - System.currentTimeMillis() in 1..(60_000L + SLACK_MILLIS)
+            },
+        )
         assertEquals(SelectionRequest.Select(legacyCell), widgetSnapshots(context).read().sending)
         assertEquals(SelectionRequest.Select(legacyCell), rendered.last().sending)
     }
@@ -436,7 +450,7 @@ class WidgetSelectionWorkerTest {
         rendered.clear()
         transport = EchoSelectionTransport { throw IOException("unexpected end of stream") }
         val result = runWorker(legacyTapInput())
-        assertTrue("result=$result", result is ListenableWorker.Result.Retry)
+        assertTrue("result=$result", result is ListenableWorker.Result.Success)
         assertEquals(SelectionRequest.Select(legacyCell), widgetSnapshots(context).read().sending)
         assertEquals(SelectionRequest.Select(legacyCell), rendered.last().sending)
     }
@@ -500,7 +514,7 @@ class WidgetSelectionWorkerTest {
             WidgetController(it, { transport }, { EchoSelectionTransport() }, publish = { _, snapshot -> rendered += snapshot }, clock = { clock.get() })
         }
         val result = runWorker(storedTapInput(context, accepted.workRequest))
-        assertTrue("result=$result", result is ListenableWorker.Result.Retry)
+        assertTrue("result=$result", result is ListenableWorker.Result.Success)
         val stored = widgetSnapshots(context).read()
         val last = rendered.last()
         val status = renderedStatusText(context, last)

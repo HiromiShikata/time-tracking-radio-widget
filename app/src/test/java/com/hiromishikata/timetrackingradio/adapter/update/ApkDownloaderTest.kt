@@ -48,6 +48,21 @@ class ApkDownloaderTest {
     }
 
     @Test
+    fun aTransportFailureIsMarkedAsANetworkReasonAndAnHttpStatusFailureIsNot() {
+        data class Case(val name: String, val opener: StreamOpener, val networkReason: Boolean)
+        val cases = listOf(
+            Case("HTTP 503", StreamOpener { _ -> StreamResponse(503, ByteArrayInputStream(payload)) }, false),
+            Case("transport failure", StreamOpener { _ -> throw IOException("unreachable") }, true),
+        )
+        cases.forEach { case ->
+            val downloader = ApkDownloader(folder.root, case.opener)
+            val thrown = runCatching { downloader.download(url, payload.size.toLong(), version) }.exceptionOrNull()
+            assertTrue("${case.name}: thrown=$thrown", thrown is ApkDownloadException)
+            assertEquals("${case.name}", case.networkReason, (thrown as ApkDownloadException).networkReason)
+        }
+    }
+
+    @Test
     fun aFailedTransferThrowsAndRemovesBothFiles() {
         data class Case(val name: String, val opener: StreamOpener)
         val cases = listOf(

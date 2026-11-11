@@ -13,7 +13,7 @@ import com.hiromishikata.timetrackingradio.domain.decideUpdate
 import com.hiromishikata.timetrackingradio.domain.parseSemanticVersion
 import java.time.Instant
 
-enum class UpdateCheckStatus { COMPLETED, RETRY, FAILED }
+enum class UpdateCheckStatus { COMPLETED, RETRY, RETRY_DOWNLOAD, FAILED }
 
 class UpdateCheckUseCase(
     private val releases: ReleaseRepository,

@@ -20,6 +20,7 @@ import java.util.concurrent.TimeUnit
 
 object UpdateCheckScheduler {
     private const val UNIQUE_WORK_NAME = "app-update-check"
+    const val DOWNLOAD_RETRY_UNIQUE_WORK_NAME = "app-update-download-retry"
     private const val ON_DEMAND_WORK_NAME = "app-update-check-once"
     private const val INTERVAL_HOURS = 6L
     private const val FOREGROUND_WORK_NAME = "app-update-check-foreground"
