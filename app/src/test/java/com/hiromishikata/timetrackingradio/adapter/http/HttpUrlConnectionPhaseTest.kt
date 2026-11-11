@@ -4,6 +4,7 @@ import com.hiromishikata.timetrackingradio.domain.FailurePhase
 import com.hiromishikata.timetrackingradio.domain.TransportPhaseFailure
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -21,6 +22,22 @@ class HttpUrlConnectionPhaseTest {
         val thrown = runCatching { transport.send(HttpRequest("GET", url, null)) }.exceptionOrNull()
         assertTrue("thrown=$thrown", thrown is TransportPhaseFailure)
         assertEquals(FailurePhase.CONNECTING, (thrown as TransportPhaseFailure).phase)
+    }
+
+    @Test
+    fun aServerThatNeverSendsTheStatusLineIsTaggedAsReading() {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+        server.start()
+        try {
+            val thrown = runCatching {
+                HttpUrlConnectionTransport(timeoutMillis = 200).send(HttpRequest("POST", server.url("/exec").toString(), "{}"))
+            }.exceptionOrNull()
+            assertTrue("thrown=$thrown", thrown is TransportPhaseFailure)
+            assertEquals(FailurePhase.READING, (thrown as TransportPhaseFailure).phase)
+        } finally {
+            server.shutdown()
+        }
     }
 
     @Test
