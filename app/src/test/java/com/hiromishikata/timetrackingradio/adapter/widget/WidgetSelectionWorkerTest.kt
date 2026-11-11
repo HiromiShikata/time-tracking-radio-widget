@@ -433,7 +433,7 @@ class WidgetSelectionWorkerTest {
         assertTrue("result=$result", result is ListenableWorker.Result.Success)
         assertTrue(
             "a legacy tap's retry must come back within the sixty-second bound",
-            uniqueWorkInfos(context, WidgetSelectionWorker.UNIQUE_WORK_NAME).any {
+            uniqueWorkInfos(context, WidgetWorkScheduler.LEGACY_TAP_RETRY_UNIQUE_WORK_NAME).any {
                 it.state == WorkInfo.State.ENQUEUED && it.nextScheduleTimeMillis - System.currentTimeMillis() in 1..(60_000L + SLACK_MILLIS)
             },
         )

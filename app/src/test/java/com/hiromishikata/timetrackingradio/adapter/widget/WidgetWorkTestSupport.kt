@@ -231,6 +231,7 @@ internal val WIDGET_WORK_NAMES: List<String>
         WidgetSelectionWorker.UNIQUE_WORK_NAME,
         WidgetWorkScheduler.DRAIN_UNIQUE_WORK_NAME,
         WidgetWorkScheduler.DRAIN_RETRY_UNIQUE_WORK_NAME,
+        WidgetWorkScheduler.LEGACY_TAP_RETRY_UNIQUE_WORK_NAME,
     )
 
 internal fun allWidgetWorkInfos(context: Context): List<WorkInfo> = WIDGET_WORK_NAMES.flatMap { uniqueWorkInfos(context, it) }

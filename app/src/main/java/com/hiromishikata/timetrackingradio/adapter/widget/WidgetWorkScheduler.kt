@@ -114,7 +114,7 @@ object WidgetWorkScheduler {
         recordRetry(context, RetryKind.LEGACY_TAP, attempt)
         val retryInput = Data.Builder().putAll(input).putInt(WidgetSelectionWorker.KEY_ATTEMPT, attempt).build()
         WorkManager.getInstance(context).enqueueUniqueWork(
-            WidgetSelectionWorker.UNIQUE_WORK_NAME,
+            LEGACY_TAP_RETRY_UNIQUE_WORK_NAME,
             ExistingWorkPolicy.APPEND_OR_REPLACE,
             OneTimeWorkRequestBuilder<WidgetSelectionWorker>()
                 .setInputData(retryInput)
