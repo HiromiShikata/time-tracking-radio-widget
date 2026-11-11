@@ -149,6 +149,31 @@ class WidgetTapRetryTest {
     }
 
     @Test
+    fun aNewerTapIsSentAfterTheOlderPendingTapEvenWhenTheNetworkReturnsTogether() {
+        val failing = AtomicBoolean(true)
+        val transport = EchoSelectionTransport { request ->
+            if (request.method == "POST" && selectedProjectOf(request) == first.project && failing.get()) {
+                throw UnknownHostException("unreachable.example")
+            }
+        }
+        installTransport(transport)
+        SelectionWidgetProvider().onReceive(context, tapIntent(first))
+        meetConstraintsOfAllWidgetWork(context)
+        awaitCondition("the older tap fails once") { transport.requests.count { it.method == "POST" } >= 1 }
+        failing.set(false)
+        val known = pendingWidgetWorkIds(context)
+        SelectionWidgetProvider().onReceive(context, tapIntent(second))
+        awaitCondition("both taps are answered") {
+            meetConstraintsOfWidgetWorkNotIn(context, known)
+            transport.requests.count { it.method == "POST" && selectedProjectOf(it) == second.project } >= 1
+        }
+        assertEquals(
+            listOf(first.project, first.project, second.project),
+            transport.requests.filter { it.method == "POST" }.map { selectedProjectOf(it) },
+        )
+    }
+
+    @Test
     fun aNewTapSendsThePendingTapWithoutWaitingForItsRetryDelay() {
         val network = ProjectNetwork(first.project)
         installTransport(network.transport)

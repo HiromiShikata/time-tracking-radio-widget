@@ -55,7 +55,10 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
             controller.dropFinishedWork(ownTap?.cell, ownTap?.tappedAt) { uniqueWorkInfos() }
             when (val work = requestedWork()) {
                 RequestedWork.Refresh -> controller.refresh()
-                is RequestedWork.StampedTap -> controller.performWorkTap(work.cell, work.request, work.tappedAt)
+                is RequestedWork.StampedTap -> {
+                    val drained = controller.performWorkTap(work.cell, work.request, work.tappedAt)
+                    if (drained.unanswered > 0) WidgetWorkScheduler.scheduleDrainRetry(applicationContext, attempt = 1)
+                }
                 is RequestedWork.LegacyTap -> controller.performLegacyTap(work.cell)
                 is RequestedWork.Drain -> return drainPendingTaps(controller, work.attempt)
                 is RequestedWork.Relay -> return relayDrain(work.attempt)

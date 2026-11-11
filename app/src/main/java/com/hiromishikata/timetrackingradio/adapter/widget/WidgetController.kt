@@ -130,13 +130,20 @@ class WidgetController(
         WidgetScope.mutex.withLock { sendTap(cell, request, tappedAt) }
     }
 
-    suspend fun performWorkTap(cell: CellKey, request: SelectionRequest, tappedAt: Instant) {
-        WidgetScope.mutex.withLock {
-            if (isPending(cell, tappedAt)) sendTap(cell, request, tappedAt)
+    suspend fun performWorkTap(cell: CellKey, request: SelectionRequest, tappedAt: Instant): DrainResult = WidgetScope.mutex.withLock {
+        when {
+            !isPending(cell, tappedAt) -> DrainResult(answered = 0, unanswered = 0)
+            hasOlderPending(tappedAt) -> drainLocked()
+            else -> {
+                sendTap(cell, request, tappedAt)
+                DrainResult(answered = 1, unanswered = 0)
+            }
         }
     }
 
-    suspend fun drainPendingTaps(): DrainResult = WidgetScope.mutex.withLock {
+    suspend fun drainPendingTaps(): DrainResult = WidgetScope.mutex.withLock { drainLocked() }
+
+    private fun drainLocked(): DrainResult {
         val pending = synchronized(WidgetStateLock) { storedQueue(clock()) }
             .filter { it.workEnqueued }
             .sortedBy { it.acceptedAt }
@@ -156,7 +163,7 @@ class WidgetController(
                 logWidgetWorkFailure(failure)
             }
         }
-        DrainResult(answered, unanswered)
+        return DrainResult(answered, unanswered)
     }
 
     fun releaseWork(workIds: Set<UUID>): Set<UUID> = synchronized(WidgetStateLock) {
@@ -240,6 +247,10 @@ class WidgetController(
 
     private fun isPending(cell: CellKey, tappedAt: Instant): Boolean = synchronized(WidgetStateLock) {
         storedQueue(clock()).any { it.workEnqueued && it.cell == cell && it.acceptedAt == tappedAt }
+    }
+
+    private fun hasOlderPending(tappedAt: Instant): Boolean = synchronized(WidgetStateLock) {
+        storedQueue(clock()).any { it.workEnqueued && it.acceptedAt.isBefore(tappedAt) }
     }
 
     private fun sendTap(cell: CellKey, request: SelectionRequest, tappedAt: Instant) {
