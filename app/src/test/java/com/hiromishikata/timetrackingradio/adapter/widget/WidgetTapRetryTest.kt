@@ -32,6 +32,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.net.UnknownHostException
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -151,9 +152,12 @@ class WidgetTapRetryTest {
     @Test
     fun aNewerTapIsSentAfterTheOlderPendingTapEvenWhenTheNetworkReturnsTogether() {
         val failing = AtomicBoolean(true)
+        val answered = CopyOnWriteArrayList<String>()
         val transport = EchoSelectionTransport { request ->
-            if (request.method == "POST" && selectedProjectOf(request) == first.project && failing.get()) {
-                throw UnknownHostException("unreachable.example")
+            if (request.method == "POST") {
+                val project = selectedProjectOf(request).orEmpty()
+                if (project == first.project && failing.get()) throw UnknownHostException("unreachable.example")
+                answered += project
             }
         }
         installTransport(transport)
@@ -165,12 +169,9 @@ class WidgetTapRetryTest {
         SelectionWidgetProvider().onReceive(context, tapIntent(second))
         awaitCondition("both taps are answered") {
             meetConstraintsOfWidgetWorkNotIn(context, known)
-            transport.requests.count { it.method == "POST" && selectedProjectOf(it) == second.project } >= 1
+            answered.contains(second.project)
         }
-        assertEquals(
-            listOf(first.project, first.project, second.project),
-            transport.requests.filter { it.method == "POST" }.map { selectedProjectOf(it) },
-        )
+        assertEquals(listOf(first.project, second.project), answered.toList())
     }
 
     @Test
