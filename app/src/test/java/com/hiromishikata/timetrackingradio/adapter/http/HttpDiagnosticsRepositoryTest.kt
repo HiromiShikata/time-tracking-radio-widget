@@ -11,6 +11,8 @@ import java.io.IOException
 import java.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import com.hiromishikata.timetrackingradio.domain.RequestDiagnostics
+import com.hiromishikata.timetrackingradio.domain.RequestKind
 
 class HttpDiagnosticsRepositoryTest {
     private val endpoint = "https://script.example.com/exec?key=k"
@@ -20,21 +22,23 @@ class HttpDiagnosticsRepositoryTest {
     )
     private val body = encodeDiagnosticsUpload(entries)
 
+    private val UPLOAD = RequestDiagnostics(RequestKind.DIAGNOSTICS_UPLOAD)
+
     private fun ok(text: String): () -> HttpResponse = { HttpResponse(200, null, text) }
     private fun redirect(location: String): () -> HttpResponse = { HttpResponse(302, location, "") }
 
     @Test
     fun uploadPostsTheDiagnosticsBodyAndReadsARedirectWithGet() {
         val cases = listOf(
-            Triple(listOf(ok("""{"result":"ok","accepted":1}""")), listOf(HttpRequest("POST", endpoint, body)), true),
+            Triple(listOf(ok("""{"result":"ok","accepted":1}""")), listOf(HttpRequest("POST", endpoint, body, UPLOAD)), true),
             Triple(
                 listOf(redirect(redirected), ok("""{"result":"ok","accepted":1}""")),
-                listOf(HttpRequest("POST", endpoint, body), HttpRequest("GET", redirected, null)),
+                listOf(HttpRequest("POST", endpoint, body, UPLOAD), HttpRequest("GET", redirected, null, UPLOAD)),
                 true,
             ),
-            Triple(listOf(ok("""{"result":"ng","message":"unsupported request body"}""")), listOf(HttpRequest("POST", endpoint, body)), false),
-            Triple(listOf(ok("<html>")), listOf(HttpRequest("POST", endpoint, body)), false),
-            Triple(listOf({ throw IOException("unreachable") }), listOf(HttpRequest("POST", endpoint, body)), false),
+            Triple(listOf(ok("""{"result":"ng","message":"unsupported request body"}""")), listOf(HttpRequest("POST", endpoint, body, UPLOAD)), false),
+            Triple(listOf(ok("<html>")), listOf(HttpRequest("POST", endpoint, body, UPLOAD)), false),
+            Triple(listOf({ throw IOException("unreachable") }), listOf(HttpRequest("POST", endpoint, body, UPLOAD)), false),
         )
         cases.forEach { (scripts, expectedRequests, delivered) ->
             val transport = FakeHttpTransport(ArrayDeque(scripts))

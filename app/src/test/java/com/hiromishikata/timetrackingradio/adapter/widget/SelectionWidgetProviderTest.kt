@@ -90,7 +90,7 @@ class SelectionWidgetProviderTest {
         assertTrue(rendered.any { it.sending == SelectionRequest.Select(CellKey("project-a", ActivityKind.MEETING)) })
         assertTrue(
             widgetDiagnosticLog(context).readAll().any {
-                it.type == DiagnosticEventType.TAP_RECEIVED && it.detail == "project=project-a, activity=meeting"
+                it.type == DiagnosticEventType.TAP_RECEIVED && Regex("tapped_at=.+, project=project-a, activity=meeting, request=select, queued_taps=1, work_id=.+").matches(it.detail)
             },
         )
         assertEquals(1, uniqueWorkInfos(context, WidgetSelectionWorker.UNIQUE_WORK_NAME).size)

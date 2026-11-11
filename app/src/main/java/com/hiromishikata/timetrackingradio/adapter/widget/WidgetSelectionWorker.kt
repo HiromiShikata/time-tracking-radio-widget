@@ -49,6 +49,7 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
 
     private suspend fun runSelection(): Result {
         val controller = controllerFactory(applicationContext)
+        val run = WorkRun(runAttemptCount) { readDeviceNetworkState(applicationContext) }
         var completedNormally = false
         val result = try {
             val ownTap = requestedStampedTapOrNull()
@@ -56,11 +57,11 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
             when (val work = requestedWork()) {
                 RequestedWork.Refresh -> controller.refresh()
                 is RequestedWork.StampedTap -> {
-                    val drained = controller.performWorkTap(work.cell, work.request, work.tappedAt)
+                    val drained = controller.performWorkTap(work.cell, work.request, work.tappedAt, run)
                     if (drained.unanswered > 0) WidgetWorkScheduler.scheduleDrainRetry(applicationContext, attempt = 1)
                 }
                 is RequestedWork.LegacyTap -> controller.performLegacyTap(work.cell)
-                is RequestedWork.Drain -> return drainPendingTaps(controller, work.attempt)
+                is RequestedWork.Drain -> return drainPendingTaps(controller, work.attempt, run)
                 is RequestedWork.Relay -> return relayDrain(work.attempt)
             }
             currentCoroutineContext().ensureActive()
@@ -92,8 +93,8 @@ class WidgetSelectionWorker(context: Context, parameters: WorkerParameters) : Li
         }
     }
 
-    private suspend fun drainPendingTaps(controller: WidgetController, attempt: Int): Result {
-        val drained = controller.drainPendingTaps()
+    private suspend fun drainPendingTaps(controller: WidgetController, attempt: Int, run: WorkRun): Result {
+        val drained = controller.drainPendingTaps(run)
         if (drained.unanswered > 0) WidgetWorkScheduler.scheduleDrainRetry(applicationContext, attempt + 1)
         if (drained.answered > 0) {
             WidgetWorkScheduler.enqueueDiagnosticsUpload(applicationContext)

@@ -7,6 +7,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
+import com.hiromishikata.timetrackingradio.domain.RequestDiagnostics
+import com.hiromishikata.timetrackingradio.domain.RequestKind
 
 class HttpReleaseRepositoryTest {
     private val url = "https://api.example.com/repos/example/app/releases/latest"
@@ -17,7 +19,7 @@ class HttpReleaseRepositoryTest {
         val transport = FakeHttpTransport(ArrayDeque(listOf({ HttpResponse(200, null, validBody) })))
         val release = HttpReleaseRepository(url, transport).readLatest()
         assertEquals(LatestRelease(SemanticVersion(1, 0, 7), "https://example.com/app.apk", null), release)
-        assertEquals(listOf(HttpRequest("GET", url, null)), transport.requests)
+        assertEquals(listOf(HttpRequest("GET", url, null, RequestDiagnostics(RequestKind.UPDATE_CHECK))), transport.requests)
     }
 
     @Test

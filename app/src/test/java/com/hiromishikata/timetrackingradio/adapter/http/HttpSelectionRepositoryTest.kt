@@ -20,6 +20,8 @@ import java.net.UnknownHostException
 import java.net.UnknownServiceException
 import javax.net.ssl.SSLException
 import javax.net.ssl.SSLHandshakeException
+import com.hiromishikata.timetrackingradio.domain.RequestDiagnostics
+import com.hiromishikata.timetrackingradio.domain.RequestKind
 
 class HttpSelectionRepositoryTest {
     private val endpoint = "https://script.example.com/macros/s/key-value/exec/time-tracking-selection?key=k"
@@ -36,9 +38,9 @@ class HttpSelectionRepositoryTest {
     @Test
     fun readFollowsRedirectsWithGet() {
         val cases = listOf(
-            listOf(ok(okBody)) to listOf(HttpRequest("GET", endpoint, null)),
+            listOf(ok(okBody)) to listOf(HttpRequest("GET", endpoint, null, RequestDiagnostics(RequestKind.REFRESH))),
             listOf(redirect(redirected), ok(okBody)) to
-                listOf(HttpRequest("GET", endpoint, null), HttpRequest("GET", redirected, null)),
+                listOf(HttpRequest("GET", endpoint, null, RequestDiagnostics(RequestKind.REFRESH)), HttpRequest("GET", redirected, null, RequestDiagnostics(RequestKind.REFRESH))),
         )
         cases.forEach { (scripts, expectedRequests) ->
             val transport = FakeHttpTransport(ArrayDeque(scripts))
@@ -52,17 +54,17 @@ class HttpSelectionRepositoryTest {
     fun updatePostsEncodedBodyThenFollowsRedirectsWithGet() {
         val body = """{"project":"project-a","activity":"meeting","tappedAt":"2026-11-09T02:19:03.112Z"}"""
         val cases = listOf(
-            listOf(ok(okBody)) to listOf(HttpRequest("POST", endpoint, body)),
+            listOf(ok(okBody)) to listOf(HttpRequest("POST", endpoint, body, RequestDiagnostics(RequestKind.SELECTION, "project=project-a, activity=meeting, tapped_at=2026-11-09T02:19:03.112Z"))),
             listOf(redirect(redirected), ok(okBody)) to
                 listOf(
-                    HttpRequest("POST", endpoint, body),
-                    HttpRequest("GET", redirected, null),
+                    HttpRequest("POST", endpoint, body, RequestDiagnostics(RequestKind.SELECTION, "project=project-a, activity=meeting, tapped_at=2026-11-09T02:19:03.112Z")),
+                    HttpRequest("GET", redirected, null, RequestDiagnostics(RequestKind.SELECTION)),
                 ),
             listOf(redirect(redirected), redirect("https://script.example.com/second"), ok(okBody)) to
                 listOf(
-                    HttpRequest("POST", endpoint, body),
-                    HttpRequest("GET", redirected, null),
-                    HttpRequest("GET", "https://script.example.com/second", null),
+                    HttpRequest("POST", endpoint, body, RequestDiagnostics(RequestKind.SELECTION, "project=project-a, activity=meeting, tapped_at=2026-11-09T02:19:03.112Z")),
+                    HttpRequest("GET", redirected, null, RequestDiagnostics(RequestKind.SELECTION)),
+                    HttpRequest("GET", "https://script.example.com/second", null, RequestDiagnostics(RequestKind.SELECTION)),
                 ),
         )
         cases.forEach { (scripts, expectedRequests) ->

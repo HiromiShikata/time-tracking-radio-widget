@@ -25,15 +25,18 @@ class SelectionWidgetRemoteViewsFactory(private val context: Context) {
         projects.forEachIndexed { rowIndex, project ->
             views.addView(R.id.grid_rows, buildRow(rowIndex, project, snapshot))
         }
-        val status = resolveWidgetStatus(
+        views.setTextViewText(R.id.status_text, statusText(snapshot, now))
+        return views
+    }
+
+    fun statusText(snapshot: WidgetSnapshot, now: Instant): String = statusTextOf(
+        resolveWidgetStatus(
             selection = snapshot.selection,
             sending = snapshot.statusRequest,
             outcome = snapshot.outcome,
             asOf = snapshot.fetchedAt ?: now,
-        )
-        views.setTextViewText(R.id.status_text, statusText(status))
-        return views
-    }
+        ),
+    )
 
     private fun buildRow(rowIndex: Int, project: String, snapshot: WidgetSnapshot): RemoteViews {
         val row = RemoteViews(context.packageName, R.layout.widget_grid_row)
@@ -77,7 +80,7 @@ class SelectionWidgetRemoteViewsFactory(private val context: Context) {
         )
     }
 
-    private fun statusText(status: WidgetStatus): String = when (status) {
+    private fun statusTextOf(status: WidgetStatus): String = when (status) {
         is WidgetStatus.Recording -> context.getString(
             R.string.status_recording,
             status.selection.cell.project,

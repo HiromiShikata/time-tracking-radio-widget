@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.hiromishikata.timetrackingradio.adapter.http.DiagnosticHttpTransport
 import com.hiromishikata.timetrackingradio.adapter.http.HttpReleaseRepository
 import com.hiromishikata.timetrackingradio.adapter.http.HttpUrlConnectionTransport
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueDiagnosticLogRepository
@@ -12,6 +13,7 @@ import com.hiromishikata.timetrackingradio.adapter.store.SETTINGS_PREFERENCES_NA
 import com.hiromishikata.timetrackingradio.adapter.store.SharedPreferencesKeyValueStore
 import com.hiromishikata.timetrackingradio.domain.ApkDownloadRepository
 import com.hiromishikata.timetrackingradio.domain.DiagnosticRecorder
+import com.hiromishikata.timetrackingradio.domain.DiagnosticSink
 import com.hiromishikata.timetrackingradio.domain.ReleaseRepository
 import com.hiromishikata.timetrackingradio.domain.endpointKeySecrets
 import com.hiromishikata.timetrackingradio.usecase.UpdateCheckStatus
@@ -29,11 +31,12 @@ class UpdateCheckWorker(context: Context, parameters: WorkerParameters) : Corout
             applicationContext.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE),
         )
         val endpointUrl = KeyValueWidgetSettingsRepository(store).read()?.endpointUrl.orEmpty()
+        val recorder = DiagnosticRecorder(KeyValueDiagnosticLogRepository(store), endpointKeySecrets(endpointUrl)) { Instant.now() }
         val useCase = UpdateCheckUseCase(
-            releaseRepositoryFactory(),
+            releaseRepositoryFactory(endpointUrl, recorder),
             downloaderFactory(applicationContext.cacheDir),
             UpdateNotifier(applicationContext),
-            DiagnosticRecorder(KeyValueDiagnosticLogRepository(store), endpointKeySecrets(endpointUrl)) { Instant.now() },
+            recorder,
             UpdateCheckScheduler.lastCheckRepository(applicationContext),
         ) { Instant.now() }
         when (useCase.execute(installedName)) {
@@ -62,8 +65,11 @@ class UpdateCheckWorker(context: Context, parameters: WorkerParameters) : Corout
 
         var downloaderFactory: (File) -> ApkDownloadRepository = { ApkDownloader(it) }
 
-        var releaseRepositoryFactory: () -> ReleaseRepository = {
-            HttpReleaseRepository(LATEST_RELEASE_URL, HttpUrlConnectionTransport())
+        var releaseRepositoryFactory: (endpointUrl: String, diagnostics: DiagnosticSink) -> ReleaseRepository = { endpointUrl, diagnostics ->
+            HttpReleaseRepository(
+                LATEST_RELEASE_URL,
+                DiagnosticHttpTransport(HttpUrlConnectionTransport(), endpointUrl, diagnostics),
+            )
         }
     }
 }

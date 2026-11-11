@@ -52,6 +52,7 @@ import com.hiromishikata.timetrackingradio.usecase.WidgetSettingsUpdateUseCase
 import java.time.Instant
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
+import com.hiromishikata.timetrackingradio.domain.RequestTimer
 
 class SettingsActivity : Activity() {
     private val store by lazy {
@@ -182,18 +183,23 @@ class SettingsActivity : Activity() {
 
     private fun runConnectionCheck(settings: WidgetSettings) {
         val recorder = recorderFor(settings)
+        val timer = RequestTimer()
         val result = WidgetConnectionCheckUseCase(
             HttpSelectionRepository(
                 settings.endpointUrl,
-                DiagnosticHttpTransport(transportFactory(), settings.endpointUrl, recorder),
+                DiagnosticHttpTransport(transportFactory(), settings.endpointUrl, recorder, timer),
                 recorder,
+                timer,
             ),
             recorder,
             endpointKeySecrets(settings.endpointUrl),
         ).execute()
         DiagnosticUploadUseCase(
             diagnosticLog,
-            HttpDiagnosticsRepository(settings.endpointUrl, uploadTransportFactory()),
+            HttpDiagnosticsRepository(
+                settings.endpointUrl,
+                DiagnosticHttpTransport(uploadTransportFactory(), settings.endpointUrl, recorder),
+            ),
             recorder,
         ).execute()
         runOnUiThread {

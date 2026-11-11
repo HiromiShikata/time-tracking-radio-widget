@@ -186,7 +186,7 @@ class WidgetControllerTest {
         assertEquals(listOf("POST"), transport.requests.map { it.method })
         assertFalse(transport.requests.any { it.body.orEmpty().startsWith("{\"diagnostics\":[") })
         val tapEntry = KeyValueDiagnosticLogRepository(store).readAll().single { it.type == DiagnosticEventType.TAP_RECEIVED }
-        assertEquals("project=project-a, activity=meeting", tapEntry.detail)
+        assertTrue(Regex("tapped_at=.+, project=project-a, activity=meeting, request=select, queued_taps=1, work_id=.+").matches(tapEntry.detail))
         assertFalse(tapEntry.delivered)
     }
 
@@ -242,7 +242,7 @@ class WidgetControllerTest {
         val transport = ForbiddenTransport()
         WidgetController(context, { transport }, { transport }, publish = { _, _ -> }).acceptTap(meeting, workEnqueued = false)
         val entry = KeyValueDiagnosticLogRepository(store).readAll().single { it.type == DiagnosticEventType.TAP_RECEIVED }
-        assertEquals("project=project-a, activity=meeting", entry.detail)
+        assertTrue(Regex("tapped_at=.+, project=project-a, activity=meeting, request=select, queued_taps=0, work_id=none").matches(entry.detail))
         assertFalse(entry.delivered)
         assertEquals(0, transport.calls)
     }
