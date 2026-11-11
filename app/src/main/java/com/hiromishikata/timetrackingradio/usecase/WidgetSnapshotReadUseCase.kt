@@ -16,10 +16,7 @@ class WidgetSnapshotReadUseCase(
     fun execute(): WidgetSnapshot {
         val previous = snapshots.read()
         val next = try {
-            applySelectionResponse(selections.read(), previous, clock()).copy(
-                savedAt = previous.savedAt,
-                roundTripMillis = previous.roundTripMillis,
-            )
+            applySelectionResponse(selections.read(), previous, clock())
         } catch (failure: CommunicationFailedException) {
             markUnreachable(previous)
         } catch (failure: Throwable) {

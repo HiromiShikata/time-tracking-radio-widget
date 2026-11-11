@@ -6,6 +6,7 @@
     <string name="status_recording">Recording %1$s / %2$s</string>
     <string name="status_since">since %1$s UTC</string>
     <string name="status_not_recording">Not recording</string>
+    <string name="status_saving_tapped">Saving… tapped %1$s</string>
     <string name="status_saving">Saving… sent %1$s</string>
     <string name="status_saved">Saved %1$s (%2$s s)</string>
     <string name="status_waiting_for_network">Waiting for network since %1$s</string>

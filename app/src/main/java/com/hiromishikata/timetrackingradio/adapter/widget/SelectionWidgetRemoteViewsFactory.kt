@@ -48,18 +48,21 @@ class SelectionWidgetRemoteViewsFactory(private val context: Context) {
         val asOf = snapshot.fetchedAt ?: now
         val oldestUnsent = snapshot.oldestUnsentTapAt
         val pending = snapshot.pendingTapAt
+        val sentAt = snapshot.sentAt
         val savedAt = snapshot.savedAt
+        val refreshedAt = snapshot.fetchedAt
         val roundTripMillis = snapshot.roundTripMillis
         val outcome = snapshot.outcome
         return when {
             oldestUnsent != null -> context.getString(R.string.status_waiting_for_network, formatUtcHourMinuteSecond(oldestUnsent))
-            pending != null -> context.getString(
-                R.string.status_saving,
-                formatUtcHourMinuteSecond(snapshot.sentAt ?: pending),
+            pending != null && sentAt == null -> context.getString(
+                R.string.status_saving_tapped,
+                formatUtcHourMinuteSecond(pending),
             )
+            pending != null && sentAt != null -> context.getString(R.string.status_saving, formatUtcHourMinuteSecond(sentAt))
             outcome is WidgetOutcome.Rejected -> context.getString(R.string.status_server_rejected, outcome.message)
             outcome == WidgetOutcome.Unreachable -> context.getString(R.string.status_unreachable, formatUtcHourMinute(asOf))
-            savedAt != null && roundTripMillis != null -> context.getString(
+            savedAt != null && roundTripMillis != null && (refreshedAt == null || savedAt >= refreshedAt) -> context.getString(
                 R.string.status_saved,
                 formatUtcHourMinuteSecond(savedAt),
                 String.format(Locale.ROOT, "%.1f", roundTripMillis / MILLIS_PER_SECOND),
