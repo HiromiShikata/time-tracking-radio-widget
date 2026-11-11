@@ -64,26 +64,61 @@ class AppIconTest {
     }
 
     @Test
-    fun theLauncherBackgroundIsBlackAndTheForegroundIsTheWhiteRadioGlyph() {
+    fun theLauncherBackgroundIsBlackAndTheForegroundIsTheWhiteFourRingGlyph() {
         val icon = context.getDrawable(context.resourceIdOf("mipmap", "ic_launcher")) as AdaptiveIconDrawable
         assertEquals(Color.BLACK, (icon.background as ColorDrawable).color)
         val pixels = render(icon.foreground, LAUNCHER_SIZE)
         assertWhiteOnly(pixels)
-        assertEquals("centre dot", Color.WHITE, pixels.getPixel(54, 54))
-        assertEquals("ring", Color.WHITE, pixels.getPixel(54, 33))
-        assertEquals("hole between ring and dot", 0, Color.alpha(pixels.getPixel(54, 40)))
+        assertEquals("top-left centre dot", Color.WHITE, pixels.getPixel(39, 39))
+        assertEquals("top-left ring", Color.WHITE, pixels.getPixel(39, 30))
+        assertEquals("top-left gap between dot and ring", 0, Color.alpha(pixels.getPixel(39, 33)))
+        assertEquals("top-right hollow centre", 0, Color.alpha(pixels.getPixel(69, 39)))
+        assertEquals("top-right ring", Color.WHITE, pixels.getPixel(69, 30))
+        assertEquals("bottom-left hollow centre", 0, Color.alpha(pixels.getPixel(39, 69)))
+        assertEquals("bottom-right hollow centre", 0, Color.alpha(pixels.getPixel(69, 69)))
+        assertEquals("group centre", 0, Color.alpha(pixels.getPixel(54, 54)))
         assertEquals("corner", 0, Color.alpha(pixels.getPixel(0, 0)))
+        assertAllGlyphPixelsInsideSafeZone(pixels)
     }
 
     @Test
-    fun theNotificationSmallIconIsAWhiteOnlyRadioGlyph() {
+    fun theMonochromeLayerIsTheSameWhiteFourRingGlyph() {
+        val icon = context.getDrawable(context.resourceIdOf("mipmap", "ic_launcher_round")) as AdaptiveIconDrawable
+        val pixels = render(icon.monochrome!!, LAUNCHER_SIZE)
+        assertWhiteOnly(pixels)
+        assertEquals("top-left centre dot", Color.WHITE, pixels.getPixel(39, 39))
+        assertEquals("top-left gap between dot and ring", 0, Color.alpha(pixels.getPixel(39, 33)))
+        assertEquals("top-right hollow centre", 0, Color.alpha(pixels.getPixel(69, 39)))
+        assertEquals("top-right ring", Color.WHITE, pixels.getPixel(69, 30))
+        assertEquals("bottom-right hollow centre", 0, Color.alpha(pixels.getPixel(69, 69)))
+    }
+
+    @Test
+    fun theNotificationSmallIconIsAWhiteOnlyFourRingGlyph() {
         val drawable = context.getDrawable(context.resourceIdOf("drawable", "ic_notification_radio"))
         assertNotNull(drawable)
         val pixels = render(drawable!!, NOTIFICATION_SIZE)
         assertWhiteOnly(pixels)
-        assertEquals("centre dot", Color.WHITE, pixels.getPixel(48, 48))
-        assertEquals("hole between ring and dot", 0, Color.alpha(pixels.getPixel(48, 20)))
+        assertEquals("top-left centre dot", Color.WHITE, pixels.getPixel(20, 20))
+        assertEquals("top-left ring", Color.WHITE, pixels.getPixel(20, 4))
+        assertEquals("top-left gap between dot and ring", 0, Color.alpha(pixels.getPixel(20, 10)))
+        assertEquals("top-right hollow centre", 0, Color.alpha(pixels.getPixel(75, 20)))
+        assertEquals("top-right ring", Color.WHITE, pixels.getPixel(75, 4))
+        assertEquals("bottom-left hollow centre", 0, Color.alpha(pixels.getPixel(20, 75)))
+        assertEquals("bottom-right hollow centre", 0, Color.alpha(pixels.getPixel(75, 75)))
         assertEquals("corner", 0, Color.alpha(pixels.getPixel(0, 0)))
+    }
+
+    private fun assertAllGlyphPixelsInsideSafeZone(bitmap: Bitmap) {
+        val centre = LAUNCHER_SIZE / 2.0
+        for (y in 0 until bitmap.height) {
+            for (x in 0 until bitmap.width) {
+                if (Color.alpha(bitmap.getPixel(x, y)) == 0) continue
+                val dx = x + 0.5 - centre
+                val dy = y + 0.5 - centre
+                assertTrue("pixel ($x,$y) lies outside the 66dp safe zone", Math.hypot(dx, dy) <= SAFE_ZONE_RADIUS + 0.5)
+            }
+        }
     }
 
     private fun render(drawable: Drawable, size: Int): Bitmap {
@@ -114,6 +149,7 @@ class AppIconTest {
     private companion object {
         const val LAUNCHER_SIZE = 108
         const val NOTIFICATION_SIZE = 96
+        const val SAFE_ZONE_RADIUS = 33.0
         const val WHITE_THRESHOLD = 250
         const val ANDROID_NAMESPACE = "http://schemas.android.com/apk/res/android"
     }
