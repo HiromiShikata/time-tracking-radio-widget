@@ -16,7 +16,6 @@ import com.hiromishikata.timetrackingradio.adapter.store.KeyValueWidgetSnapshotR
 import com.hiromishikata.timetrackingradio.adapter.store.SETTINGS_PREFERENCES_NAME
 import com.hiromishikata.timetrackingradio.adapter.store.SharedPreferencesKeyValueStore
 import com.hiromishikata.timetrackingradio.domain.ActivityKind
-import com.hiromishikata.timetrackingradio.domain.CellVisual
 import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
 import com.hiromishikata.timetrackingradio.domain.CellKey
 import com.hiromishikata.timetrackingradio.domain.Selection
@@ -24,7 +23,6 @@ import com.hiromishikata.timetrackingradio.domain.SelectionRequest
 import com.hiromishikata.timetrackingradio.domain.WidgetOutcome
 import com.hiromishikata.timetrackingradio.domain.WidgetSettings
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
-import com.hiromishikata.timetrackingradio.domain.resolveCellVisual
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -400,7 +398,7 @@ class WidgetControllerTest {
         val secondAccepted = controller.acceptQueued(meeting)
         runStoredTap(storedTapInput(context, firstAccepted.workRequest), transport)
         val afterFirst = KeyValueWidgetSnapshotRepository(store).read()
-        assertEquals("after the first work the ring is still on the cell", CellVisual.SENDING, resolveCellVisual(meeting, afterFirst.selection, afterFirst.sending))
+        assertEquals("after the first work the cell is still shown as selected", R.drawable.cell_selected, renderedCellDrawableResId(context, afterFirst, meeting))
         runStoredTap(storedTapInput(context, secondAccepted.workRequest), transport)
         assertNull("after the second work the ring is cleared", KeyValueWidgetSnapshotRepository(store).read().sending)
     }

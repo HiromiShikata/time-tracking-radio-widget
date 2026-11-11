@@ -7,10 +7,8 @@ import com.hiromishikata.timetrackingradio.TestApplication
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueWidgetSettingsRepository
 import com.hiromishikata.timetrackingradio.domain.ActivityKind
 import com.hiromishikata.timetrackingradio.domain.CellKey
-import com.hiromishikata.timetrackingradio.domain.CellVisual
 import com.hiromishikata.timetrackingradio.domain.SelectionRequest
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
-import com.hiromishikata.timetrackingradio.domain.resolveCellVisual
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -181,7 +179,6 @@ class WidgetWorkSchedulerTest {
         }
         val waiting = rendered.last()
         assertEquals("the ring stays on the waiting cell", SelectionRequest.Select(first), waiting.sending)
-        assertEquals(CellVisual.SENDING, resolveCellVisual(first, waiting.selection, waiting.sending))
         assertEquals(R.drawable.cell_selected, renderedCellDrawableResId(context, waiting, first))
         val waitingStatus = renderedStatusText(context, waiting)
         assertTrue("status=$waitingStatus", WAITING_FOR_NETWORK_LINE.matches(stateLineOf(waitingStatus)))
