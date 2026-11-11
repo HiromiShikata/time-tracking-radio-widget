@@ -236,6 +236,43 @@ class WidgetTapRetryTest {
         }
     }
 
+    @Test
+    fun aLegacyRetryScheduledBehindAReleasedTapIsNotCancelledByTheRelease() {
+        val network = ProjectNetwork(second.project).apply { failing.set(false) }
+        installTransport(network.transport)
+        val wm = WorkManager.getInstance(context)
+        val stamped = OneTimeWorkRequestBuilder<WidgetSelectionWorker>()
+            .setInputData(
+                workDataOf(
+                    "project" to first.project,
+                    "activity" to first.activity.code,
+                    "tappedAt" to TEST_TAPPED_AT_TEXT,
+                    "requestKind" to "select",
+                ),
+            )
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setInitialDelay(5, TimeUnit.HOURS)
+            .build()
+        wm.enqueueUniqueWork(WidgetSelectionWorker.UNIQUE_WORK_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, stamped)
+        KeyValueQueuedTapRepository(widgetPreferences(context)).write(
+            listOf(QueuedTap(first, TEST_TAPPED_AT, SelectionRequest.Select(first), workEnqueued = true, waiting = true, workId = stamped.id)),
+        )
+        WidgetWorkScheduler.scheduleLegacyTapRetry(
+            context,
+            workDataOf("project" to second.project, "activity" to second.activity.code),
+            attempt = 1,
+        )
+        TestListenableWorkerBuilder<WidgetAppStartWorker>(context).build().startWork().get()
+        awaitCondition("the legacy retry is sent after the release", 15_000) {
+            meetConstraintsAndDelaysOfAllWidgetWork(context)
+            network.transport.requests.any { it.method == "POST" && selectedProjectOf(it) == second.project }
+        }
+        assertEquals(WorkInfo.State.CANCELLED, wm.getWorkInfoById(stamped.id).get()?.state)
+        val cancelled = (allWidgetWorkInfos(context) + uniqueWorkInfos(context, WidgetWorkScheduler.LEGACY_TAP_RETRY_UNIQUE_WORK_NAME))
+            .filter { it.id != stamped.id && it.state == WorkInfo.State.CANCELLED }
+        assertTrue("work other than the released tap was cancelled: ${cancelled.map { it.id }}", cancelled.isEmpty())
+    }
+
     private fun assertTheBackedOffTapIsSentAfter(trigger: () -> Unit) {
         val network = ProjectNetwork(first.project).apply { failing.set(false) }
         installTransport(network.transport)

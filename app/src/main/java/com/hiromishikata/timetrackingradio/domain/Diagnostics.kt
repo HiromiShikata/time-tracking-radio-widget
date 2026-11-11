@@ -31,6 +31,7 @@ enum class RetryKind(val code: String) {
     TAP_QUEUE("tap_queue"),
     LEGACY_TAP("legacy_tap"),
     UPDATE_DOWNLOAD("update_download"),
+    UPDATE_CHECK("update_check"),
 }
 
 fun retryScheduledDetail(kind: RetryKind, attempt: Int, delaySeconds: Long): String =

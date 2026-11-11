@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit
 object WidgetWorkScheduler {
     const val DRAIN_UNIQUE_WORK_NAME = "widget-drain"
     const val DRAIN_RETRY_UNIQUE_WORK_NAME = "widget-drain-retry"
+    const val LEGACY_TAP_RETRY_UNIQUE_WORK_NAME = "widget-legacy-retry"
 
     const val TAP_RETRY_DELAY_SECONDS = 60L
 

@@ -32,7 +32,7 @@ object UpdateCheckScheduler {
     private const val FOREGROUND_CHECK_KEY = "last_foreground_update_check_at"
     private const val TAG = "UpdateCheckScheduler"
     private val foregroundThrottle: Duration = Duration.ofSeconds(60)
-    private const val DOWNLOAD_RETRY_DELAY_MINUTES = 5L
+    private const val RETRY_DELAY_MINUTES = 5L
 
     fun schedule(context: Context) {
         val request = PeriodicWorkRequestBuilder<UpdateCheckWorker>(INTERVAL_HOURS, TimeUnit.HOURS)
@@ -56,18 +56,24 @@ object UpdateCheckScheduler {
             .enqueueUniqueWork(ON_DEMAND_WORK_NAME, ExistingWorkPolicy.KEEP, request)
     }
 
-    fun enqueueDownloadRetry(context: Context, attempt: Int) {
+    fun enqueueDownloadRetry(context: Context, attempt: Int) =
+        enqueueRetry(context, DOWNLOAD_RETRY_UNIQUE_WORK_NAME, RetryKind.UPDATE_DOWNLOAD, attempt)
+
+    fun enqueueCheckRetry(context: Context, attempt: Int) =
+        enqueueRetry(context, CHECK_RETRY_UNIQUE_WORK_NAME, RetryKind.UPDATE_CHECK, attempt)
+
+    private fun enqueueRetry(context: Context, uniqueWorkName: String, kind: RetryKind, attempt: Int) {
         updateDiagnosticRecorder(context).record(
             DiagnosticEventType.RETRY_SCHEDULED,
-            retryScheduledDetail(RetryKind.UPDATE_DOWNLOAD, attempt, DOWNLOAD_RETRY_DELAY_MINUTES * 60),
+            retryScheduledDetail(kind, attempt, RETRY_DELAY_MINUTES * 60),
         )
         val request = OneTimeWorkRequestBuilder<UpdateCheckWorker>()
-            .setInputData(workDataOf(UpdateCheckWorker.KEY_DOWNLOAD_ATTEMPT to attempt))
-            .setInitialDelay(DOWNLOAD_RETRY_DELAY_MINUTES, TimeUnit.MINUTES)
+            .setInputData(workDataOf(UpdateCheckWorker.KEY_RETRY_ATTEMPT to attempt))
+            .setInitialDelay(RETRY_DELAY_MINUTES, TimeUnit.MINUTES)
             .setConstraints(connectedConstraints())
             .build()
         WorkManager.getInstance(context)
-            .enqueueUniqueWork(DOWNLOAD_RETRY_UNIQUE_WORK_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
+            .enqueueUniqueWork(uniqueWorkName, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
     }
 
     fun enqueueForegroundCheckIfDue(context: Context, now: Instant) {
