@@ -26,10 +26,17 @@ fun readDeviceNetworkState(context: Context): NetworkState {
     )
 }
 
-private fun transportNames(capabilities: NetworkCapabilities): List<String> = listOfNotNull(
-    "wifi".takeIf { capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) },
-    "cellular".takeIf { capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) },
-    "ethernet".takeIf { capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) },
-    "vpn".takeIf { capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) },
-    "bluetooth".takeIf { capabilities.hasTransport(NetworkCapabilities.TRANSPORT_BLUETOOTH) },
-).ifEmpty { listOf("other") }
+private fun transportNames(capabilities: NetworkCapabilities): List<String> = transportNamesOf(capabilities::hasTransport)
+
+internal fun transportNamesOf(hasTransport: (Int) -> Boolean): List<String> = KNOWN_TRANSPORTS
+    .filter { (transport, _) -> hasTransport(transport) }
+    .map { (_, name) -> name }
+    .ifEmpty { listOf("other") }
+
+private val KNOWN_TRANSPORTS = listOf(
+    NetworkCapabilities.TRANSPORT_WIFI to "wifi",
+    NetworkCapabilities.TRANSPORT_CELLULAR to "cellular",
+    NetworkCapabilities.TRANSPORT_ETHERNET to "ethernet",
+    NetworkCapabilities.TRANSPORT_VPN to "vpn",
+    NetworkCapabilities.TRANSPORT_BLUETOOTH to "bluetooth",
+)
