@@ -48,11 +48,27 @@ class UpdateCheckWorkerTest {
     }
 
     @Test
-    fun aFailedReleaseCheckIsRetried() {
+    fun aFailedReleaseCheckIsRetriedWithinFiveMinutesAndTheRetryIsRecorded() {
+        installWorkManagerForTests(context)
         val repository = object : ReleaseRepository {
             override fun readLatest(): LatestRelease = throw CommunicationFailedException("down")
         }
-        assertTrue(runWorkerWith(repository) is ListenableWorker.Result.Retry)
+        val result = runWorkerWith(repository)
+        assertTrue("result=$result", result is ListenableWorker.Result.Success)
+        val retry = WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWork(UpdateCheckScheduler.CHECK_RETRY_UNIQUE_WORK_NAME).get().single()
+        assertEquals(WorkInfo.State.ENQUEUED, retry.state)
+        val delay = retry.nextScheduleTimeMillis - System.currentTimeMillis()
+        assertTrue("the check retry is $delay ms away, over five minutes", delay in 1..(300_000L + 1_000L))
+        assertTrue(
+            "no retry_scheduled entry for the check retry",
+            KeyValueDiagnosticLogRepository(widgetPreferences(context)).readAll().any {
+                it.type == DiagnosticEventType.RETRY_SCHEDULED &&
+                    it.detail.contains("kind=update_check") &&
+                    it.detail.contains("attempt=1") &&
+                    it.detail.contains("next_delay_seconds=300")
+            },
+        )
     }
 
     @Test
