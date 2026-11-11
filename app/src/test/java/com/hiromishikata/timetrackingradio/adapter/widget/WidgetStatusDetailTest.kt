@@ -74,7 +74,7 @@ class WidgetStatusDetailTest {
             StatusCase(
                 "an unsent tap before sending starts shows the tap time",
                 snapshot(selection = Selection(meeting, tapAt), pendingTapAt = tapAt, queuedTapCount = 1),
-            ) { app -> listOf("Recording project-a / meeting", "since 02:19 UTC", "Saving… tapped 02:19:03", "Queue 1 · app $app") },
+            ) { app -> listOf("Recording project-a / meeting", "since 02:19 UTC", "Saving… sent 02:19:03", "Queue 1 · app $app") },
             StatusCase(
                 "an in-flight tap shows the time it was sent",
                 snapshot(
@@ -145,7 +145,7 @@ class WidgetStatusDetailTest {
     }
 
     @Test
-    fun theSavingLineReadsTappedUntilSendingStartsAndSentAfterwards() {
+    fun theSavingLineShowsSentWithTheTapTimeBeforeSendingAndTheSendStartTimeAfterwards() {
         data class SavingCase(
             val name: String,
             val tappedAt: Instant,
@@ -157,16 +157,16 @@ class WidgetStatusDetailTest {
                 "before sending starts shows the tap time",
                 tappedAt = tapAt,
                 sentAt = null,
-                expectedStateLine = "Saving… tapped 02:19:03",
+                expectedStateLine = "Saving… sent 02:19:03",
             ),
             SavingCase(
                 "before sending starts a later tap shows its own tap time",
                 tappedAt = Instant.parse("2026-11-09T02:30:59.999Z"),
                 sentAt = null,
-                expectedStateLine = "Saving… tapped 02:30:59",
+                expectedStateLine = "Saving… sent 02:30:59",
             ),
             SavingCase(
-                "once sending has started shows the send time, not the tap time",
+                "once sending has started shows the send start time, not the tap time",
                 tappedAt = tapAt,
                 sentAt = Instant.parse("2026-11-09T02:19:05.001Z"),
                 expectedStateLine = "Saving… sent 02:19:05",

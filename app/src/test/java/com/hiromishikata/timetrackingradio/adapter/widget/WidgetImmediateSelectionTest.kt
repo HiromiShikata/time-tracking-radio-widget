@@ -166,7 +166,7 @@ class WidgetImmediateSelectionTest {
             .last()
             .detail
         assertEquals(SelectionWidgetRemoteViewsFactory(context).statusText(rendered.last(), tappedAt), recorded)
-        assertTrue(recorded, recorded.contains("Saving… tapped 02:19:03"))
+        assertTrue(recorded, recorded.contains("Saving… sent 02:19:03"))
     }
 
     @Test

@@ -55,11 +55,7 @@ class SelectionWidgetRemoteViewsFactory(private val context: Context) {
         val outcome = snapshot.outcome
         return when {
             oldestUnsent != null -> context.getString(R.string.status_waiting_for_network, formatUtcHourMinuteSecond(oldestUnsent))
-            pending != null && sentAt == null -> context.getString(
-                R.string.status_saving_tapped,
-                formatUtcHourMinuteSecond(pending),
-            )
-            pending != null && sentAt != null -> context.getString(R.string.status_saving, formatUtcHourMinuteSecond(sentAt))
+            pending != null -> context.getString(R.string.status_saving, formatUtcHourMinuteSecond(sentAt ?: pending))
             outcome is WidgetOutcome.Rejected -> context.getString(R.string.status_server_rejected, outcome.message)
             outcome == WidgetOutcome.Unreachable -> context.getString(R.string.status_unreachable, formatUtcHourMinute(asOf))
             savedAt != null && roundTripMillis != null && (refreshedAt == null || savedAt >= refreshedAt) -> context.getString(

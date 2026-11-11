@@ -67,7 +67,7 @@ class WidgetDiagnosticDetailTest {
         assertEquals(
             listOf(
                 "Not recording\nUpdated 02:19:03\nQueue 0 · app $version",
-                "Recording project-a / meeting\nsince 02:19 UTC\nSaving… tapped 02:19:03\nQueue 1 · app $version",
+                "Recording project-a / meeting\nsince 02:19 UTC\nSaving… sent 02:19:03\nQueue 1 · app $version",
             ),
             log().readAll().filter { it.type == DiagnosticEventType.WIDGET_STATUS }.map { it.detail }.reversed(),
         )
