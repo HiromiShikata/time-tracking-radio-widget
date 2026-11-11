@@ -142,9 +142,12 @@ class WidgetControllerTest {
         val transport = FakeHttpTransport(ArrayDeque(listOf({ HttpResponse(200, null, body) })))
         val controller = controller(transport)
         val accepted = controller.acceptQueued(meeting)
-        runStoredTap(storedTapInput(context, accepted.workRequest), transport)
+        runStoredTap(storedTapInput(context, accepted.workRequest), transport) { tappedAt }
         val stored = KeyValueWidgetSnapshotRepository(store).read()
-        assertEquals(WidgetSnapshot(Selection(meeting, since), stored.fetchedAt, WidgetOutcome.Settled, null, null), stored)
+        assertEquals(
+            WidgetSnapshot(Selection(meeting, since), stored.fetchedAt, WidgetOutcome.Settled, null, null, savedAt = tappedAt, roundTripMillis = 0L),
+            stored,
+        )
         assertEquals(1, transport.requests.count { it.method == "POST" && it.body?.startsWith("{\"project\":") == true })
     }
 
@@ -495,7 +498,7 @@ class WidgetControllerTest {
     }
 
     @Test
-    fun aTapAcceptedWithWorkEnqueuedShowsTheWaitingStatusAndKeepsItsRing() {
+    fun aTapAcceptedWithWorkEnqueuedShowsTheSavingStatusAndProjectsItsSelection() {
         KeyValueWidgetSettingsRepository(store).write(settings)
         val rendered = mutableListOf<WidgetSnapshot>()
         val transport = ForbiddenTransport()
@@ -504,26 +507,31 @@ class WidgetControllerTest {
         val status = renderedStatusText(context, snapshot)
         assertEquals(SelectionRequest.Select(work), snapshot.sending)
         assertEquals(SelectionRequest.Select(work), KeyValueWidgetSnapshotRepository(store).read().sending)
-        assertTrue("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
+        assertEquals(R.drawable.cell_selected, renderedCellDrawableResId(context, snapshot, work))
+        assertTrue("status=$status", SAVING_LINE.matches(stateLineOf(status)))
         assertEquals(0, transport.calls)
     }
 
     @Test
-    fun theWaitingStatusGivesWayToTheSwitchingStatusWhenTheTapsPostStartsAndTheRingStays() {
+    fun theSavingStatusShowsTheSendTimeOnceTheTapsPostStartsAndTheProjectionStays() {
         KeyValueWidgetSettingsRepository(store).write(settings)
         val transport = GatedSelectionTransport(selectedMeetingBody)
         val rendered = CopyOnWriteArrayList<WidgetSnapshot>()
-        val workController = recordingController(transport, rendered)
+        val acceptedClock = tappedAt.minusSeconds(60)
+        val workController = recordingController(transport, rendered) { acceptedClock }
         val accepted = workController.acceptQueued(work)
-        assertTrue("waiting before the POST starts", WAITING_FOR_NETWORK_TEXT.containsMatchIn(renderedStatusText(context, rendered.last())))
+        assertEquals(
+            "before the POST starts the status shows the accept time",
+            "Saving… sent 02:18:03",
+            stateLineOf(renderedStatusText(context, rendered.last())),
+        )
         val input = storedTapInput(context, accepted.workRequest)
-        val first = thread { runStoredTap(input, transport, publish = { _, snapshot -> rendered += snapshot }) }
+        val first = thread { runStoredTap(input, transport, publish = { _, snapshot -> rendered += snapshot }) { tappedAt } }
         try {
             assertTrue("the POST started", transport.selectionStarted.await(5, TimeUnit.SECONDS))
-            val sending = awaitLastRendered(rendered) { !WAITING_FOR_NETWORK_TEXT.containsMatchIn(renderedStatusText(context, it)) }
-            val status = renderedStatusText(context, sending)
-            assertFalse("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
-            assertTrue("status=$status", status.startsWith("Switching"))
+            val sending = awaitLastRendered(rendered) { stateLineOf(renderedStatusText(context, it)) == "Saving… sent 02:19:03" }
+            assertEquals("the status shows the send time", "Saving… sent 02:19:03", stateLineOf(renderedStatusText(context, sending)))
+            assertEquals(R.drawable.cell_selected, renderedCellDrawableResId(context, sending, work))
             assertEquals(SelectionRequest.Select(work), sending.sending)
         } finally {
             transport.releaseSelection.countDown()
@@ -553,7 +561,7 @@ class WidgetControllerTest {
     }
 
     @Test
-    fun aPendingTapShowsItsRingAndWaitingStatusWithinTheTwentyFourHourDisplayBound() {
+    fun aPendingTapShowsItsProjectionAndSavingStatusWithinTheTwentyFourHourDisplayBound() {
         KeyValueWidgetSettingsRepository(store).write(settings)
         val clock = AtomicReference(acceptedAt)
         val rendered = mutableListOf<WidgetSnapshot>()
@@ -563,7 +571,8 @@ class WidgetControllerTest {
         controller.render()
         val status = renderedStatusText(context, rendered.last())
         assertEquals(SelectionRequest.Select(work), rendered.last().sending)
-        assertTrue("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
+        assertEquals(R.drawable.cell_selected, renderedCellDrawableResId(context, rendered.last(), work))
+        assertEquals("status=$status", "Saving… sent 08:00:00", stateLineOf(status))
     }
 
     @Test
@@ -645,7 +654,7 @@ class WidgetControllerTest {
     }
 
     @Test
-    fun theLastPendingTapOwnsTheRingWhileTheEarliestTapHeadsTheStatus() {
+    fun theLastPendingTapOwnsTheProjectionWhileTheEarliestTapHeadsTheStatus() {
         KeyValueWidgetSettingsRepository(store).write(settings)
         val rendered = mutableListOf<WidgetSnapshot>()
         val controller = recordingController(ForbiddenTransport(), rendered) { tappedAt }
@@ -654,11 +663,13 @@ class WidgetControllerTest {
         val snapshot = rendered.last()
         val status = renderedStatusText(context, snapshot)
         assertEquals(SelectionRequest.Select(work), snapshot.sending)
-        assertTrue("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
+        assertEquals(R.drawable.cell_selected, renderedCellDrawableResId(context, snapshot, work))
+        assertEquals(R.drawable.cell_unselected, renderedCellDrawableResId(context, snapshot, meeting))
+        assertEquals("status=$status", "Saving… sent 02:19:03", stateLineOf(status))
     }
 
     @Test
-    fun theEarliestPendingTapShowsTheSwitchingStatusWhileItsPostRunsAndTheLaterTapWaitsBehindIt() {
+    fun theEarliestPendingTapShowsTheSavingStatusWhileItsPostRunsAndTheLaterTapWaitsBehindIt() {
         KeyValueWidgetSettingsRepository(store).write(settings)
         val transport = GatedSelectionTransport(clearedBody)
         val rendered = CopyOnWriteArrayList<WidgetSnapshot>()
@@ -671,7 +682,7 @@ class WidgetControllerTest {
             assertTrue("the earliest tap's POST started", transport.selectionStarted.await(5, TimeUnit.SECONDS))
             val sending = awaitLastRendered(rendered) { !WAITING_FOR_NETWORK_TEXT.containsMatchIn(renderedStatusText(context, it)) }
             val status = renderedStatusText(context, sending)
-            assertTrue("status=$status", status.startsWith("Switching to project-a / meeting"))
+            assertEquals("status=$status", "Saving… sent 02:19:03", stateLineOf(status))
             assertEquals(SelectionRequest.Select(work), sending.sending)
         } finally {
             transport.releaseSelection.countDown()
@@ -680,7 +691,7 @@ class WidgetControllerTest {
     }
 
     @Test
-    fun whenTheEarliestPendingTapCompletesTheLaterTapBecomesTheHeadAndTheFirstRingIsGone() {
+    fun whenTheEarliestPendingTapCompletesTheLaterTapBecomesTheHeadAndTheFirstProjectionIsGone() {
         KeyValueWidgetSettingsRepository(store).write(settings)
         val transport = GatedSelectionTransport(clearedBody)
         val rendered = CopyOnWriteArrayList<WidgetSnapshot>()
@@ -698,8 +709,9 @@ class WidgetControllerTest {
         val last = rendered.last()
         val status = renderedStatusText(context, last)
         assertEquals(SelectionRequest.Select(work), last.sending)
-        assertTrue("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
-        assertFalse("the completed tap's ring is gone", renderedCellDrawableResId(context, last, meeting) == R.drawable.cell_sending)
+        assertEquals("status=$status", "Saving… sent 02:19:03", stateLineOf(status))
+        assertEquals("the completed tap's cell is no longer projected", R.drawable.cell_unselected, renderedCellDrawableResId(context, last, meeting))
+        assertEquals("the later tap is projected", R.drawable.cell_selected, renderedCellDrawableResId(context, last, work))
     }
 
     @Test
@@ -731,8 +743,8 @@ class WidgetControllerTest {
         val last = rendered.last()
         val status = renderedStatusText(context, last)
         assertEquals(SelectionRequest.Clear, last.sending)
-        assertEquals("the pending Clear still shows the sending ring on the meeting cell", R.drawable.cell_sending, renderedCellDrawableResId(context, last, meeting))
-        assertTrue("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
+        assertEquals("the pending Clear projects no selection on the meeting cell", R.drawable.cell_unselected, renderedCellDrawableResId(context, last, meeting))
+        assertEquals("status=$status", "Saving… sent 02:19:04", stateLineOf(status))
     }
 
     @Test

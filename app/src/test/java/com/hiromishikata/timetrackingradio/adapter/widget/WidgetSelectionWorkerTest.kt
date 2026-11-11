@@ -211,7 +211,7 @@ class WidgetSelectionWorkerTest {
         assertNull("the stored snapshot still holds the tap's ring", widgetSnapshots(context).read().sending)
         assertNull("the last rendered screen still shows the tap's ring", last.sending)
         assertFalse("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
-        assertFalse("the tapped cell still draws the sending ring", renderedCellDrawableResId(context, last, meeting) == R.drawable.cell_sending)
+        assertEquals("the discarded tap projects no selection", R.drawable.cell_unselected, renderedCellDrawableResId(context, last, meeting))
     }
 
     private data class PostBodyCase(
@@ -287,15 +287,15 @@ class WidgetSelectionWorkerTest {
     }
 
     @Test
-    fun aTapWhoseNetworkAttemptFailsReturnsToTheWaitingStatusWithItsRingUntilTheNextAttempt() {
+    fun aTapWhoseNetworkAttemptFailsReturnsToTheWaitingStatusWithItsProjectionUntilTheNextAttempt() {
         transport = EchoSelectionTransport { throw UnknownHostException("unreachable.example") }
         val result = runWorker(acceptedTapInput())
         assertTrue("result=$result", result is ListenableWorker.Result.Success)
         val waiting = rendered.last()
-        assertEquals("the ring stays on the waiting cell", SelectionRequest.Select(meeting), waiting.sending)
-        assertEquals(R.drawable.cell_sending, renderedCellDrawableResId(context, waiting, meeting))
+        assertEquals("the sending state stays on the waiting cell", SelectionRequest.Select(meeting), waiting.sending)
+        assertEquals(R.drawable.cell_selected, renderedCellDrawableResId(context, waiting, meeting))
         val status = renderedStatusText(context, waiting)
-        assertTrue("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
+        assertTrue("status=$status", WAITING_FOR_NETWORK_LINE.matches(stateLineOf(status)))
     }
 
     @Test
@@ -369,9 +369,9 @@ class WidgetSelectionWorkerTest {
         }
         val last = rendered.last()
         val status = renderedStatusText(context, last)
-        assertEquals("the stopped tap keeps its ring", SelectionRequest.Select(meeting), last.sending)
-        assertEquals(R.drawable.cell_sending, renderedCellDrawableResId(context, last, meeting))
-        assertTrue("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
+        assertEquals("the stopped tap keeps its sending state", SelectionRequest.Select(meeting), last.sending)
+        assertEquals("the stopped tap keeps its projected selection", R.drawable.cell_selected, renderedCellDrawableResId(context, last, meeting))
+        assertTrue("status=$status", WAITING_FOR_NETWORK_LINE.matches(stateLineOf(status)))
         assertEquals(SelectionRequest.Select(meeting), widgetSnapshots(context).read().sending)
     }
 
@@ -470,7 +470,7 @@ class WidgetSelectionWorkerTest {
         assertEquals(WidgetOutcome.Unreachable, stored.outcome)
         assertNull(stored.sending)
         assertNull(rendered.last().sending)
-        assertFalse("the legacy tap's cell still draws the sending ring", renderedCellDrawableResId(context, rendered.last(), legacyCell) == R.drawable.cell_sending)
+        assertEquals("the legacy tap projects no selection", R.drawable.cell_unselected, renderedCellDrawableResId(context, rendered.last(), legacyCell))
         val status = renderedStatusText(context, rendered.last())
         assertFalse("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
     }
@@ -521,7 +521,7 @@ class WidgetSelectionWorkerTest {
         assertNull("the stored snapshot shows the ring of a tap older than 24 hours", stored.sending)
         assertNull("the last render shows the ring of a tap older than 24 hours", last.sending)
         assertFalse("status=$status", WAITING_FOR_NETWORK_TEXT.containsMatchIn(status))
-        assertFalse("the tapped cell still draws the sending ring", renderedCellDrawableResId(context, last, meeting) == R.drawable.cell_sending)
+        assertEquals("the tap older than 24 hours projects no selection", R.drawable.cell_unselected, renderedCellDrawableResId(context, last, meeting))
     }
 
     @Test
@@ -533,7 +533,7 @@ class WidgetSelectionWorkerTest {
         assertEquals(Selection(meeting, since), widgetSnapshots(context).read().selection)
         val last = rendered.last()
         assertNull("the last rendered screen still shows a sending cell", last.sending)
-        assertFalse("the tapped cell still draws the sending ring", renderedCellDrawableResId(context, last, meeting) == R.drawable.cell_sending)
+        assertEquals("the saved selection is projected on the tapped cell", R.drawable.cell_selected, renderedCellDrawableResId(context, last, meeting))
     }
 
     @Test
