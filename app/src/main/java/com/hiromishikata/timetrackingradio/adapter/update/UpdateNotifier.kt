@@ -41,7 +41,7 @@ class UpdateNotifier(private val context: Context) : UpdateAnnouncer {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setSmallIcon(R.drawable.ic_notification_radio)
             .setContentTitle(context.getString(R.string.update_channel_name))
             .setContentText(context.getString(R.string.update_available, version.toString()))
             .setContentIntent(pending)
