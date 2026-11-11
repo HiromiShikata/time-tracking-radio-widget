@@ -238,7 +238,14 @@ internal fun allWidgetWorkInfos(context: Context): List<WorkInfo> = WIDGET_WORK_
 
 internal fun meetConstraintsOfAllWidgetWork(context: Context) {
     val driver = checkNotNull(WorkManagerTestInitHelper.getTestDriver(context))
-    allWidgetWorkInfos(context).filterNot { it.state.isFinished }.forEach { driver.setAllConstraintsMet(it.id) }
+    allWidgetWorkInfos(context).filter { it.state == WorkInfo.State.ENQUEUED }.forEach { info ->
+        try {
+            driver.setAllConstraintsMet(info.id)
+        } catch (started: IllegalArgumentException) {
+            val stillEnqueued = allWidgetWorkInfos(context).any { it.id == info.id && it.state == WorkInfo.State.ENQUEUED }
+            if (stillEnqueued) throw started
+        }
+    }
 }
 
 internal fun meetConstraintsAndDelaysOfAllWidgetWork(context: Context) {

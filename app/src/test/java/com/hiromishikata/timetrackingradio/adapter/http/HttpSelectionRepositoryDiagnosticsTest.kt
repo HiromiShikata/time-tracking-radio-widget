@@ -25,7 +25,6 @@ class HttpSelectionRepositoryDiagnosticsTest {
     private val selectionSent = "project=project-a, activity=work, tapped_at=2026-11-09T02:19:03.112Z"
     private val postSent = "kind=selection, method=POST, target=https://script.example.com/exec?key=***, $selectionSent"
 
-    /** Runs one tap through the same wiring production uses: the transport records every hop and the repository records outcomes. */
     private fun recordedOf(script: () -> HttpResponse): List<Pair<String, String>> {
         val log = FakeDiagnosticLogRepository()
         val recorder = DiagnosticRecorder(log, endpointKeySecrets(endpoint)) { Instant.EPOCH }

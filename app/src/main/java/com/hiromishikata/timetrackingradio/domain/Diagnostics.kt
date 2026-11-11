@@ -25,6 +25,9 @@ enum class DiagnosticEventType(val code: String) {
     UPDATE_CHECK("update_check"),
     UPDATE_INSTALL("update_install"),
     RETRY_SCHEDULED("retry_scheduled"),
+    APP_STARTED("app_started"),
+    WORK_STARTED("work_started"),
+    WIDGET_STATUS("widget_status"),
 }
 
 enum class RetryKind(val code: String) {

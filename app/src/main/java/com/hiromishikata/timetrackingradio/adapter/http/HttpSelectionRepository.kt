@@ -3,18 +3,27 @@ package com.hiromishikata.timetrackingradio.adapter.http
 import com.hiromishikata.timetrackingradio.domain.CommunicationFailedException
 import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
 import com.hiromishikata.timetrackingradio.domain.DiagnosticSink
+import com.hiromishikata.timetrackingradio.domain.FailurePhase
 import com.hiromishikata.timetrackingradio.domain.MalformedResponseException
 import com.hiromishikata.timetrackingradio.domain.NetworkUnavailableException
 import com.hiromishikata.timetrackingradio.domain.NoDiagnostics
+import com.hiromishikata.timetrackingradio.domain.ReportedSelection
+import com.hiromishikata.timetrackingradio.domain.RequestDiagnostics
+import com.hiromishikata.timetrackingradio.domain.RequestKind
+import com.hiromishikata.timetrackingradio.domain.RequestTimer
 import com.hiromishikata.timetrackingradio.domain.SelectionRepository
 import com.hiromishikata.timetrackingradio.domain.SelectionRequest
 import com.hiromishikata.timetrackingradio.domain.SelectionResponse
 import com.hiromishikata.timetrackingradio.domain.UnstampedSelectionRepository
-import com.hiromishikata.timetrackingradio.domain.describeFailure
 import com.hiromishikata.timetrackingradio.domain.encodeSelectionRequest
 import com.hiromishikata.timetrackingradio.domain.encodeUnstampedSelectionRequest
+import com.hiromishikata.timetrackingradio.domain.exceptionDetail
 import com.hiromishikata.timetrackingradio.domain.parseSelectionResponse
 import com.hiromishikata.timetrackingradio.domain.redactUrlQueries
+import com.hiromishikata.timetrackingradio.domain.requestKindOf
+import com.hiromishikata.timetrackingradio.domain.responseParsedDetail
+import com.hiromishikata.timetrackingradio.domain.selectionRequestSummary
+import com.hiromishikata.timetrackingradio.domain.unwrapTransportFailure
 import java.io.IOException
 import java.net.MalformedURLException
 import java.net.ProtocolException
@@ -25,30 +34,49 @@ class HttpSelectionRepository(
     private val endpointUrl: String,
     private val transport: HttpTransport,
     private val diagnostics: DiagnosticSink = NoDiagnostics,
+    private val timer: RequestTimer = RequestTimer(),
 ) : SelectionRepository, UnstampedSelectionRepository {
     override fun read(): SelectionResponse =
-        communicate { transport.send(HttpRequest("GET", endpointUrl, null)) }
+        communicate(HttpRequest("GET", endpointUrl, null, RequestDiagnostics(RequestKind.REFRESH)))
 
-    override fun update(request: SelectionRequest, tappedAt: Instant): SelectionResponse =
-        communicate { transport.send(HttpRequest("POST", endpointUrl, encodeSelectionRequest(request, tappedAt))) }
+    override fun update(request: SelectionRequest, tappedAt: Instant): SelectionResponse = communicate(
+        HttpRequest(
+            "POST",
+            endpointUrl,
+            encodeSelectionRequest(request, tappedAt),
+            RequestDiagnostics(requestKindOf(request), selectionRequestSummary(request, tappedAt)),
+        ),
+    )
 
-    override fun updateUnstamped(request: SelectionRequest): SelectionResponse =
-        communicate { transport.send(HttpRequest("POST", endpointUrl, encodeUnstampedSelectionRequest(request))) }
+    override fun updateUnstamped(request: SelectionRequest): SelectionResponse = communicate(
+        HttpRequest(
+            "POST",
+            endpointUrl,
+            encodeUnstampedSelectionRequest(request),
+            RequestDiagnostics(requestKindOf(request), selectionRequestSummary(request, null)),
+        ),
+    )
 
-    private fun communicate(send: () -> HttpResponse): SelectionResponse {
+    private fun communicate(initial: HttpRequest): SelectionResponse {
+        timer.beginExchange()
         val body = try {
-            followRedirects(transport, endpointUrl, send())
+            followRedirects(transport, endpointUrl, transport.send(initial), initial.diagnostics)
         } catch (failure: IOException) {
-            diagnostics.record(DiagnosticEventType.EXCEPTION, describeFailure(failure))
-            throw transportFailure(failure)
+            throw transportFailure(unwrapTransportFailure(failure))
         } catch (failure: CommunicationFailedException) {
-            diagnostics.record(DiagnosticEventType.EXCEPTION, describeFailure(failure))
+            diagnostics.record(
+                DiagnosticEventType.EXCEPTION,
+                exceptionDetail(failure, FailurePhase.AFTER_RESPONSE, timer.millisSinceRequestSent()),
+            )
             throw failure
         }
         return try {
             parseSelectionResponse(body).also { response -> recordOutcome(response) }
         } catch (failure: MalformedResponseException) {
-            diagnostics.record(DiagnosticEventType.RESPONSE_PARSED, "malformed: ${redactUrlQueries(failure.message.orEmpty())}")
+            diagnostics.record(
+                DiagnosticEventType.RESPONSE_PARSED,
+                responseParsedDetail("malformed", null, redactUrlQueries(failure.message.orEmpty()), timer.millisSinceExchangeStart()),
+            )
             throw CommunicationFailedException("endpoint returned an unexpected response", failure)
         }
     }
@@ -62,9 +90,16 @@ class HttpSelectionRepository(
 
     private fun recordOutcome(response: SelectionResponse) {
         when (response) {
-            is SelectionResponse.Accepted -> diagnostics.record(DiagnosticEventType.RESPONSE_PARSED, "ok")
+            is SelectionResponse.Accepted -> diagnostics.record(
+                DiagnosticEventType.RESPONSE_PARSED,
+                responseParsedDetail("ok", response.selection, null, timer.millisSinceExchangeStart()),
+            )
             is SelectionResponse.Rejected -> {
-                diagnostics.record(DiagnosticEventType.RESPONSE_PARSED, "ng")
+                val reported = (response.reported as? ReportedSelection.Reported)?.selection
+                diagnostics.record(
+                    DiagnosticEventType.RESPONSE_PARSED,
+                    responseParsedDetail("ng", reported, redactUrlQueries(response.message), timer.millisSinceExchangeStart()),
+                )
                 diagnostics.record(DiagnosticEventType.SERVER_NG, redactUrlQueries(response.message))
             }
         }

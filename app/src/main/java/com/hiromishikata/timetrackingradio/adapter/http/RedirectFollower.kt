@@ -1,6 +1,7 @@
 package com.hiromishikata.timetrackingradio.adapter.http
 
 import com.hiromishikata.timetrackingradio.domain.CommunicationFailedException
+import com.hiromishikata.timetrackingradio.domain.RequestDiagnostics
 import java.net.URI
 import java.net.URISyntaxException
 
@@ -14,7 +15,12 @@ private val SUCCESS_RANGE = 200..299
  * Follows a POST answered by a redirect with GET and returns the body of the final HTTP 2xx response.
  * A relative Location is resolved against the URL of the request that received it.
  */
-fun followRedirects(transport: HttpTransport, requestUrl: String, initial: HttpResponse): String {
+fun followRedirects(
+    transport: HttpTransport,
+    requestUrl: String,
+    initial: HttpResponse,
+    diagnostics: RequestDiagnostics? = null,
+): String {
     var response = initial
     var currentUrl = requestUrl
     var hops = 0
@@ -23,7 +29,7 @@ fun followRedirects(transport: HttpTransport, requestUrl: String, initial: HttpR
             ?: throw CommunicationFailedException("endpoint redirected without a location")
         if (hops == MAX_REDIRECTS) throw CommunicationFailedException("endpoint redirected too many times")
         currentUrl = resolveLocation(currentUrl, location)
-        response = transport.send(HttpRequest("GET", currentUrl, null))
+        response = transport.send(HttpRequest("GET", currentUrl, null, diagnostics?.let { RequestDiagnostics(it.kind) }))
         hops++
     }
     if (response.status !in SUCCESS_RANGE) {

@@ -1,6 +1,7 @@
 package com.hiromishikata.timetrackingradio.adapter.widget
 
 import android.content.Context
+import android.net.ConnectivityManager
 import com.hiromishikata.timetrackingradio.R
 import com.hiromishikata.timetrackingradio.TestApplication
 import com.hiromishikata.timetrackingradio.adapter.http.FakeHttpTransport
@@ -22,6 +23,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.time.Instant
 
@@ -91,15 +93,18 @@ class WidgetDiagnosticDetailTest {
         val requestSentIndex = entries.indexOfFirst { it.type == DiagnosticEventType.REQUEST_SENT }
         assertTrue(workStartedIndex in 0 until requestSentIndex)
         assertEquals(
-            "kind=selection, method=POST, target=https://example.com/exec?key=***, project=project-a, activity=meeting, tapped_at=$tappedAt",
+            "kind=selection, method=POST, target=https://***.com/exec?key=***, project=project-a, activity=meeting, tapped_at=$tappedAt",
             entries[requestSentIndex].detail,
         )
     }
 
     @Test
     fun theDeviceNetworkStateReportsNoActiveNetworkWhenThereIsNone() {
+        shadowOf(context.getSystemService(ConnectivityManager::class.java)).setDefaultNetworkActive(false)
         val state = readDeviceNetworkState(context)
         assertFalse(state.activeNetwork)
         assertEquals(emptyList<String>(), state.transports)
+        assertEquals(null, state.validated)
+        assertEquals(null, state.metered)
     }
 }

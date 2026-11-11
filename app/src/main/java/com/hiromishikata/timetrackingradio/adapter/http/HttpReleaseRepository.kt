@@ -4,6 +4,8 @@ import com.hiromishikata.timetrackingradio.domain.CommunicationFailedException
 import com.hiromishikata.timetrackingradio.domain.LatestRelease
 import com.hiromishikata.timetrackingradio.domain.MalformedResponseException
 import com.hiromishikata.timetrackingradio.domain.ReleaseRepository
+import com.hiromishikata.timetrackingradio.domain.RequestDiagnostics
+import com.hiromishikata.timetrackingradio.domain.RequestKind
 import com.hiromishikata.timetrackingradio.domain.parseLatestRelease
 import java.io.IOException
 
@@ -13,7 +15,7 @@ class HttpReleaseRepository(
 ) : ReleaseRepository {
     override fun readLatest(): LatestRelease {
         val response = try {
-            transport.send(HttpRequest("GET", latestReleaseUrl, null))
+            transport.send(HttpRequest("GET", latestReleaseUrl, null, RequestDiagnostics(RequestKind.UPDATE_CHECK)))
         } catch (failure: IOException) {
             throw CommunicationFailedException("release check request failed", failure)
         }

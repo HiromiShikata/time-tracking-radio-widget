@@ -5,7 +5,10 @@ import com.hiromishikata.timetrackingradio.domain.DiagnosticEntry
 import com.hiromishikata.timetrackingradio.domain.DiagnosticsUploadRepository
 import com.hiromishikata.timetrackingradio.domain.DiagnosticsUploadResult
 import com.hiromishikata.timetrackingradio.domain.encodeDiagnosticsUpload
+import com.hiromishikata.timetrackingradio.domain.RequestDiagnostics
+import com.hiromishikata.timetrackingradio.domain.RequestKind
 import com.hiromishikata.timetrackingradio.domain.parseDiagnosticsUploadResponse
+import com.hiromishikata.timetrackingradio.domain.unwrapTransportFailure
 import java.io.IOException
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.FutureTask
@@ -14,6 +17,8 @@ import java.util.concurrent.TimeoutException
 
 /** Total time one upload may take, across every request and redirect hop. */
 const val DIAGNOSTICS_UPLOAD_DEADLINE_MILLIS = 8_000L
+
+private val UPLOAD_DIAGNOSTICS = RequestDiagnostics(RequestKind.DIAGNOSTICS_UPLOAD)
 
 class HttpDiagnosticsRepository(
     private val endpointUrl: String,
@@ -41,10 +46,11 @@ class HttpDiagnosticsRepository(
     }
 
     private fun send(entries: List<DiagnosticEntry>): DiagnosticsUploadResult {
+        val request = HttpRequest("POST", endpointUrl, encodeDiagnosticsUpload(entries), UPLOAD_DIAGNOSTICS)
         val body = try {
-            followRedirects(transport, endpointUrl, transport.send(HttpRequest("POST", endpointUrl, encodeDiagnosticsUpload(entries))))
+            followRedirects(transport, endpointUrl, transport.send(request), UPLOAD_DIAGNOSTICS)
         } catch (failure: IOException) {
-            return DiagnosticsUploadResult.Failed("request failed: ${failure.javaClass.simpleName}")
+            return DiagnosticsUploadResult.Failed("request failed: ${unwrapTransportFailure(failure).javaClass.simpleName}")
         } catch (failure: CommunicationFailedException) {
             return DiagnosticsUploadResult.Failed(failure.message.orEmpty())
         }
