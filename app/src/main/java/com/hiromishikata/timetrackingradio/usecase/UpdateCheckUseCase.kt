@@ -10,6 +10,8 @@ import com.hiromishikata.timetrackingradio.domain.ReleaseRepository
 import com.hiromishikata.timetrackingradio.domain.UpdateAnnouncer
 import com.hiromishikata.timetrackingradio.domain.UpdateDecision
 import com.hiromishikata.timetrackingradio.domain.decideUpdate
+import com.hiromishikata.timetrackingradio.domain.notificationActiveDetail
+import com.hiromishikata.timetrackingradio.domain.notificationConditionsDetail
 import com.hiromishikata.timetrackingradio.domain.parseSemanticVersion
 import java.time.Instant
 
@@ -68,7 +70,8 @@ class UpdateCheckUseCase(
             recordCheck(installedName, latestText, DECISION_NEWER_AVAILABLE, DOWNLOAD_OK, failure.message.orEmpty(), permitted, false)
             return UpdateCheckStatus.FAILED
         }
-        return complete(installedName, latestText, DECISION_NEWER_AVAILABLE, DOWNLOAD_OK, permitted, notified)
+        val activeAfterPost = if (notified) announcer.isUpdateNotificationActive() else null
+        return complete(installedName, latestText, DECISION_NEWER_AVAILABLE, DOWNLOAD_OK, permitted, notified, activeAfterPost)
     }
 
     private fun complete(
@@ -78,9 +81,10 @@ class UpdateCheckUseCase(
         download: String,
         permitted: Boolean,
         notified: Boolean,
+        activeAfterPost: Boolean? = null,
     ): UpdateCheckStatus {
         lastChecked.write(clock())
-        recordCheck(installedName, latestText, decision, download, null, permitted, notified)
+        recordCheck(installedName, latestText, decision, download, null, permitted, notified, activeAfterPost)
         return UpdateCheckStatus.COMPLETED
     }
 
@@ -92,12 +96,15 @@ class UpdateCheckUseCase(
         reason: String?,
         permitted: Boolean,
         notified: Boolean,
+        activeAfterPost: Boolean? = null,
     ) {
         val reasonPart = reason?.let { "reason=$it, " }.orEmpty()
+        val activePart = if (notified) ", ${notificationActiveDetail(activeAfterPost)}" else ""
         diagnostics.record(
             DiagnosticEventType.UPDATE_CHECK,
             "installed=$installedName, latest=$latest, decision=$decision, download=$download, $reasonPart" +
-                "notifications_permitted=$permitted, notified=$notified",
+                "notifications_permitted=$permitted, notified=$notified, " +
+                notificationConditionsDetail(announcer.notificationConditions()) + activePart,
         )
     }
 

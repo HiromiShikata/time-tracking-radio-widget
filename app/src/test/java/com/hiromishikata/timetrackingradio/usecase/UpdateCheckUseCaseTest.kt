@@ -2,6 +2,9 @@ package com.hiromishikata.timetrackingradio.usecase
 
 import com.hiromishikata.timetrackingradio.domain.ApkDownloadException
 import com.hiromishikata.timetrackingradio.domain.ApkDownloadRepository
+import com.hiromishikata.timetrackingradio.domain.ChannelImportance
+import com.hiromishikata.timetrackingradio.domain.InterruptionFilter
+import com.hiromishikata.timetrackingradio.domain.NotificationConditions
 import com.hiromishikata.timetrackingradio.domain.CommunicationFailedException
 import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
 import com.hiromishikata.timetrackingradio.domain.DiagnosticSink
@@ -18,6 +21,12 @@ import java.io.File
 import java.time.Instant
 
 private val downloadedApk = File("updates/app-update.apk")
+private val visibleConditions = NotificationConditions(
+    appNotificationsEnabled = true,
+    updateChannelImportance = ChannelImportance.HIGH,
+    interruptionFilter = InterruptionFilter.ALL,
+)
+private const val VISIBLE_DETAIL = "notifications_enabled=true, channel_importance=high, interruption_filter=all"
 
 class UpdateCheckUseCaseTest {
     private class CallOrder {
@@ -42,6 +51,8 @@ class UpdateCheckUseCaseTest {
     private class RecordingAnnouncer(
         private val order: CallOrder = CallOrder(),
         private val permitted: Boolean = true,
+        private val conditions: NotificationConditions = visibleConditions,
+        private val active: Boolean? = true,
     ) : UpdateAnnouncer {
         val announced = mutableListOf<Pair<SemanticVersion, File>>()
 
@@ -52,12 +63,20 @@ class UpdateCheckUseCaseTest {
             announced += version to apk
             return permitted
         }
+
+        override fun notificationConditions(): NotificationConditions = conditions
+
+        override fun isUpdateNotificationActive(): Boolean? = active
     }
 
     private class ThrowingAnnouncer(private val failure: RuntimeException) : UpdateAnnouncer {
         override fun notificationsPermitted(): Boolean = true
 
         override fun announce(version: SemanticVersion, apk: File): Boolean = throw failure
+
+        override fun notificationConditions(): NotificationConditions = visibleConditions
+
+        override fun isUpdateNotificationActive(): Boolean? = null
     }
 
     private class RecordingDiagnostics : DiagnosticSink {
@@ -173,28 +192,28 @@ class UpdateCheckUseCaseTest {
                 "1.0.2",
                 { LatestRelease(SemanticVersion(1, 0, 2), apkUrl, apkSize) },
                 true,
-                exact("installed=1.0.2, latest=v1.0.2, decision=up_to_date, download=none, notifications_permitted=true, notified=false"),
+                exact("installed=1.0.2, latest=v1.0.2, decision=up_to_date, download=none, notifications_permitted=true, notified=false, $VISIBLE_DETAIL"),
             ),
             Case(
                 "newer and notified",
                 "1.0.1",
                 { LatestRelease(SemanticVersion(1, 0, 2), apkUrl, apkSize) },
                 true,
-                exact("installed=1.0.1, latest=v1.0.2, decision=newer_available, download=ok, notifications_permitted=true, notified=true"),
+                exact("installed=1.0.1, latest=v1.0.2, decision=newer_available, download=ok, notifications_permitted=true, notified=true, $VISIBLE_DETAIL, notification_active=true"),
             ),
             Case(
                 "newer and notifications not permitted",
                 "1.0.1",
                 { LatestRelease(SemanticVersion(1, 0, 2), apkUrl, apkSize) },
                 false,
-                exact("installed=1.0.1, latest=v1.0.2, decision=newer_available, download=skipped, notifications_permitted=false, notified=false"),
+                exact("installed=1.0.1, latest=v1.0.2, decision=newer_available, download=skipped, notifications_permitted=false, notified=false, $VISIBLE_DETAIL"),
             ),
             Case(
                 "release check failed",
                 "1.0.1",
                 { throw CommunicationFailedException("down") },
                 true,
-                Regex("^installed=1\\.0\\.1, latest=none, decision=check_failed, download=none, reason=.*down, notifications_permitted=true, notified=false$"),
+                Regex("^installed=1\\.0\\.1, latest=none, decision=check_failed, download=none, reason=.*down, notifications_permitted=true, notified=false, " + Regex.escape(VISIBLE_DETAIL) + "$"),
             ),
         )
         cases.forEach { case ->
@@ -372,5 +391,63 @@ class UpdateCheckUseCaseTest {
         assertTrue(detail, detail.contains("download=skipped"))
         assertTrue(detail, detail.contains("notified=false"))
         assertEquals(checkedAt, lastChecked.read())
+    }
+
+    @Test
+    fun aCheckRecordsTheNotificationStateAndWhetherTheUpdateNotificationIsActiveAfterPosting() {
+        data class Case(
+            val name: String,
+            val notified: Boolean,
+            val conditions: NotificationConditions,
+            val active: Boolean?,
+            val expectedSuffix: String,
+        )
+        val unknownConditions = NotificationConditions(null, ChannelImportance.UNKNOWN, InterruptionFilter.UNKNOWN)
+        val silencedConditions = NotificationConditions(true, ChannelImportance.LOW, InterruptionFilter.PRIORITY)
+        val cases = listOf(
+            Case(
+                "posted and visible",
+                true,
+                visibleConditions,
+                true,
+                ", notification_active=true",
+            ),
+            Case(
+                "posted but no longer active",
+                true,
+                silencedConditions,
+                false,
+                ", notification_active=false",
+            ),
+            Case(
+                "posted and the active state cannot be read",
+                true,
+                unknownConditions,
+                null,
+                ", notification_active=unknown",
+            ),
+            Case(
+                "not posted, so no active state is recorded",
+                false,
+                silencedConditions,
+                null,
+                "",
+            ),
+        )
+        cases.forEach { case ->
+            val diagnostics = RecordingDiagnostics()
+            val announcer = RecordingAnnouncer(conditions = case.conditions, active = case.active, permitted = case.notified)
+            useCase(
+                FakeReleaseRepository { LatestRelease(SemanticVersion(1, 0, 2), apkUrl, apkSize) },
+                announcer = announcer,
+                diagnostics = diagnostics,
+            ).execute("1.0.1")
+            val (_, detail) = diagnostics.recorded.single()
+            val conditionsPart = "notifications_enabled=${case.conditions.appNotificationsEnabled?.toString() ?: "unknown"}, " +
+                "channel_importance=${case.conditions.updateChannelImportance.label}, " +
+                "interruption_filter=${case.conditions.interruptionFilter.label}"
+            assertTrue("${case.name}: $detail", detail.contains(conditionsPart))
+            assertTrue("${case.name}: $detail", detail.endsWith(case.expectedSuffix))
+        }
     }
 }

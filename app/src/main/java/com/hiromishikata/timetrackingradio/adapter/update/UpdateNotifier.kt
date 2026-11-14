@@ -13,6 +13,9 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.hiromishikata.timetrackingradio.R
+import com.hiromishikata.timetrackingradio.domain.ChannelImportance
+import com.hiromishikata.timetrackingradio.domain.InterruptionFilter
+import com.hiromishikata.timetrackingradio.domain.NotificationConditions
 import com.hiromishikata.timetrackingradio.domain.SemanticVersion
 import com.hiromishikata.timetrackingradio.domain.UpdateAnnouncer
 import java.io.File
@@ -22,6 +25,33 @@ class UpdateNotifier(private val context: Context) : UpdateAnnouncer {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
+
+    override fun notificationConditions(): NotificationConditions = NotificationConditions(
+        appNotificationsEnabled = readOrNull("app notification state") {
+            NotificationManagerCompat.from(context).areNotificationsEnabled()
+        },
+        updateChannelImportance = readOrNull("update channel importance") {
+            manager().getNotificationChannel(CHANNEL_ID)?.let { channelImportanceOf(it.importance) }
+        } ?: ChannelImportance.UNKNOWN,
+        interruptionFilter = readOrNull("interruption filter") {
+            interruptionFilterOf(manager().currentInterruptionFilter)
+        } ?: InterruptionFilter.UNKNOWN,
+    )
+
+    override fun isUpdateNotificationActive(): Boolean? = readOrNull("active notifications") {
+        manager().activeNotifications.any { it.id == NOTIFICATION_ID && it.tag == null }
+    }
+
+    private fun manager(): NotificationManager =
+        context.getSystemService(NotificationManager::class.java)
+            ?: throw IllegalStateException("the notification service is not available")
+
+    private fun <T> readOrNull(what: String, read: () -> T?): T? = try {
+        read()
+    } catch (failure: Exception) {
+        Log.w(TAG, "could not read the $what: ${failure.message}")
+        null
+    }
 
     override fun announce(version: SemanticVersion, apk: File): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&

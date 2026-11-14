@@ -1,6 +1,8 @@
 package com.hiromishikata.timetrackingradio.adapter.update
 
 import android.content.Context
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.testing.WorkManagerTestInitHelper
@@ -38,13 +40,24 @@ class UpdateCheckSchedulerTest {
         WorkManager.getInstance(context).getWorkInfosForUniqueWork(ON_DEMAND_WORK_NAME).get()
 
     @Test
-    fun schedulesOneSixHourCheckAndKeepsTheExistingSchedule() {
+    fun schedulesOneHourCheckAndKeepsOneSchedule() {
         UpdateCheckScheduler.schedule(context)
         UpdateCheckScheduler.schedule(context)
         val infos = WorkManager.getInstance(context).getWorkInfosForUniqueWork("app-update-check").get()
         assertEquals(1, infos.size)
         assertEquals(WorkInfo.State.ENQUEUED, infos[0].state)
-        assertEquals(TimeUnit.HOURS.toMillis(6), infos[0].periodicityInfo!!.repeatIntervalMillis)
+        assertEquals(TimeUnit.HOURS.toMillis(1), infos[0].periodicityInfo!!.repeatIntervalMillis)
+    }
+
+    @Test
+    fun anExistingSixHourScheduleIsReplacedByTheOneHourSchedule() {
+        val sixHourRequest = PeriodicWorkRequestBuilder<UpdateCheckWorker>(6, TimeUnit.HOURS).build()
+        WorkManager.getInstance(context)
+            .enqueueUniquePeriodicWork("app-update-check", ExistingPeriodicWorkPolicy.KEEP, sixHourRequest)
+        UpdateCheckScheduler.schedule(context)
+        val infos = WorkManager.getInstance(context).getWorkInfosForUniqueWork("app-update-check").get()
+        assertEquals(1, infos.size)
+        assertEquals(TimeUnit.HOURS.toMillis(1), infos.single().periodicityInfo!!.repeatIntervalMillis)
     }
 
     @Test
@@ -52,8 +65,8 @@ class UpdateCheckSchedulerTest {
         data class Case(val name: String, val lastCheckedAt: Instant?)
         val cases = listOf(
             Case("no timestamp", null),
-            Case("seven hours old", now.minus(Duration.ofHours(7))),
-            Case("six hours and one second old", now.minus(Duration.ofHours(6)).minusSeconds(1)),
+            Case("two hours old", now.minus(Duration.ofHours(2))),
+            Case("one hour and one second old", now.minus(Duration.ofHours(1)).minusSeconds(1)),
         )
         cases.forEach { case ->
             freshWorkAndLastCheckState()
@@ -69,8 +82,8 @@ class UpdateCheckSchedulerTest {
     fun aRecentLastCheckEnqueuesNothing() {
         data class Case(val name: String, val lastCheckedAt: Instant)
         val cases = listOf(
-            Case("one hour old", now.minus(Duration.ofHours(1))),
-            Case("exactly six hours old", now.minus(Duration.ofHours(6))),
+            Case("59 minutes old", now.minus(Duration.ofMinutes(59))),
+            Case("exactly one hour old", now.minus(Duration.ofHours(1))),
         )
         cases.forEach { case ->
             freshWorkAndLastCheckState()
