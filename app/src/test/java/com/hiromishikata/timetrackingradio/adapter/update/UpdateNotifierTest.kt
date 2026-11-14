@@ -54,6 +54,14 @@ class UpdateNotifierTest {
     }
 
     @Test
+    fun theNotificationAlertsOnlyOnceSoARepostUpdatesItSilently() {
+        shadowOf(context as Application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        assertTrue(UpdateNotifier(context).announce(SemanticVersion(1, 0, 2), apk))
+        val notification = shadowOf(manager).allNotifications.single()
+        assertTrue((notification.flags and Notification.FLAG_ONLY_ALERT_ONCE) != 0)
+    }
+
+    @Test
     fun skipsTheAnnouncementWhenNotificationsAreDenied() {
         UpdateNotifier(context).announce(SemanticVersion(1, 0, 2), apk)
         assertTrue(shadowOf(manager).allNotifications.isEmpty())

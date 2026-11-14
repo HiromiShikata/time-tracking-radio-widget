@@ -76,6 +76,7 @@ class UpdateNotifier(private val context: Context) : UpdateAnnouncer {
             .setContentText(context.getString(R.string.update_available, version.toString()))
             .setContentIntent(pending)
             .setOngoing(false)
+            .setOnlyAlertOnce(true)
             .setAutoCancel(true)
             .build()
         NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
