@@ -129,3 +129,6 @@ fun networkStateDetail(state: NetworkState): String {
 
 fun workStartedDetail(tappedAt: Instant, delayMillis: Long, runAttemptCount: Int, network: NetworkState): String =
     "tapped_at=$tappedAt, delay_ms=$delayMillis, run_attempt=$runAttemptCount, ${networkStateDetail(network)}"
+
+fun workStartedDetail(tappedAt: Instant, delayMillis: Long, runAttemptCount: Int, deviceState: DeviceStateSnapshot): String =
+    "tapped_at=$tappedAt, delay_ms=$delayMillis, run_attempt=$runAttemptCount, ${formatDeviceStateSnapshot(deviceState)}"

@@ -35,6 +35,7 @@ import com.hiromishikata.timetrackingradio.adapter.update.UpdateNotifier
 import com.hiromishikata.timetrackingradio.adapter.update.updateDiagnosticRecorder
 import com.hiromishikata.timetrackingradio.adapter.widget.SelectionWidgetProvider
 import com.hiromishikata.timetrackingradio.adapter.widget.WidgetWorkScheduler
+import com.hiromishikata.timetrackingradio.adapter.widget.deviceStateExceptionSuffixes
 import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
 import com.hiromishikata.timetrackingradio.domain.ConnectionCheckResult
 import com.hiromishikata.timetrackingradio.domain.DiagnosticRecorder
@@ -216,7 +217,11 @@ class SettingsActivity : Activity() {
     }
 
     private fun recorderFor(settings: WidgetSettings): DiagnosticRecorder =
-        DiagnosticRecorder(diagnosticLog, endpointKeySecrets(settings.endpointUrl)) { Instant.now() }
+        DiagnosticRecorder(
+            diagnosticLog,
+            endpointKeySecrets(settings.endpointUrl),
+            deviceStateExceptionSuffixes(this),
+        ) { Instant.now() }
 
     private fun renderLog() {
         val entries = diagnosticLog.readAll()
