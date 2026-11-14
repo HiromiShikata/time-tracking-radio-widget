@@ -28,6 +28,7 @@ import com.hiromishikata.timetrackingradio.domain.retryScheduledDetail
 import com.hiromishikata.timetrackingradio.domain.NetworkUnavailableException
 import com.hiromishikata.timetrackingradio.domain.Selection
 import com.hiromishikata.timetrackingradio.domain.SelectionRequest
+import com.hiromishikata.timetrackingradio.domain.UnconfirmedTap
 import com.hiromishikata.timetrackingradio.domain.WidgetOutcome
 import com.hiromishikata.timetrackingradio.domain.WidgetSettings
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
@@ -75,6 +76,7 @@ class WidgetController(
     private val describeStatus: (WidgetSnapshot, Instant) -> String = { snapshot, now ->
         SelectionWidgetRemoteViewsFactory(context).statusText(snapshot, now)
     },
+    private val dataSaverRestricted: () -> Boolean = { isDataSaverRestricted(context) },
 ) {
     private val store = SharedPreferencesKeyValueStore(
         context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE),
@@ -329,7 +331,8 @@ class WidgetController(
         publishSnapshot(settings.read(), settle(update))
     }
 
-    private fun publishSnapshot(settings: WidgetSettings?, snapshot: WidgetSnapshot) {
+    private fun publishSnapshot(settings: WidgetSettings?, confirmed: WidgetSnapshot) {
+        val snapshot = confirmed.copy(dataSaverRestricted = dataSaverRestricted())
         recordStatusIfChanged(settings, snapshot)
         publish(settings, snapshot)
     }
@@ -347,7 +350,6 @@ class WidgetController(
         changedText?.let { recorderFor(settings).record(DiagnosticEventType.WIDGET_STATUS, it) }
     }
 
-    /** Writes the confirmed snapshot and returns the one to publish, which shows the projected selection. */
     private fun settle(update: (List<QueuedTap>) -> List<QueuedTap> = { it }): WidgetSnapshot = synchronized(WidgetStateLock) {
         val now = clock()
         val remaining = update(storedQueue(now))
@@ -364,11 +366,11 @@ class WidgetController(
         val confirmed = current.copy(outcome = outcome, sending = last?.request, statusRequest = head?.request)
         snapshots.write(confirmed)
         confirmed.copy(
-            selection = projectSelection(current.selection, shown),
             pendingTapAt = head?.acceptedAt,
             sentAt = head?.sentAt,
             oldestUnsentTapAt = head?.takeIf { it.waiting }?.acceptedAt,
             queuedTapCount = shown.size,
+            latestUnconfirmedTap = last?.let { UnconfirmedTap(it.request, it.acceptedAt) },
         )
     }
 

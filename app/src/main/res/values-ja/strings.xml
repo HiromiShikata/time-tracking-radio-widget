@@ -11,7 +11,11 @@
     <string name="status_updated">Updated %1$s</string>
     <string name="status_queue">Queue %1$s · app %2$s</string>
     <string name="show_status_details_label">Show status details on the widget</string>
-    <string name="status_waiting_for_network">Waiting for network since %1$s</string>
+    <string name="status_waiting_for_network">⚠ Waiting for network since %1$s</string>
+    <string name="status_data_saver_unsent">⚠ Data Saver: unsent since %1$s</string>
+    <string name="status_not_saved">Not saved: %1$s / %2$s</string>
+    <string name="status_not_saved_clear">Not saved: stop recording</string>
+    <string name="status_tapped">tapped %1$s UTC</string>
     <string name="status_unreachable">⚠ 通信できませんでした（%1$s UTC 時点の表示）</string>
     <string name="status_server_rejected">⚠ %1$s</string>
     <string name="settings_title">設定</string>

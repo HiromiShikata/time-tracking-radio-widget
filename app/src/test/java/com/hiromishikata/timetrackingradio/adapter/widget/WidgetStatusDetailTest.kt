@@ -8,6 +8,8 @@ import com.hiromishikata.timetrackingradio.R
 import com.hiromishikata.timetrackingradio.TestApplication
 import com.hiromishikata.timetrackingradio.domain.ActivityKind
 import com.hiromishikata.timetrackingradio.domain.CellKey
+import com.hiromishikata.timetrackingradio.domain.SelectionRequest
+import com.hiromishikata.timetrackingradio.domain.UnconfirmedTap
 import com.hiromishikata.timetrackingradio.domain.Selection
 import com.hiromishikata.timetrackingradio.domain.WidgetOutcome
 import com.hiromishikata.timetrackingradio.domain.WidgetSettings
@@ -46,6 +48,7 @@ class WidgetStatusDetailTest {
         savedAt: Instant? = null,
         roundTripMillis: Long? = null,
         queuedTapCount: Int = 0,
+        unsentTap: UnconfirmedTap? = null,
     ) = WidgetSnapshot(
         selection = selection,
         fetchedAt = fetchedAt,
@@ -58,6 +61,7 @@ class WidgetStatusDetailTest {
         savedAt = savedAt,
         roundTripMillis = roundTripMillis,
         queuedTapCount = queuedTapCount,
+        latestUnconfirmedTap = unsentTap,
     )
 
     @Test
@@ -73,37 +77,45 @@ class WidgetStatusDetailTest {
             ) { app -> listOf("Not recording", "Updated 02:00:00", "Queue 0 · app $app") },
             StatusCase(
                 "an unsent tap before sending starts shows the tap time",
-                snapshot(selection = Selection(meeting, tapAt), pendingTapAt = tapAt, queuedTapCount = 1),
-            ) { app -> listOf("Recording project-a / meeting", "since 02:19 UTC", "Saving… sent 02:19:03", "Queue 1 · app $app") },
+                snapshot(
+                    selection = Selection(work, workSince),
+                    pendingTapAt = tapAt,
+                    queuedTapCount = 1,
+                    unsentTap = UnconfirmedTap(SelectionRequest.Select(meeting), tapAt),
+                ),
+            ) { app -> listOf("Not saved: project-a / meeting", "tapped 02:19 UTC", "Saving… sent 02:19:03", "Queue 1 · app $app") },
             StatusCase(
                 "an in-flight tap shows the time it was sent",
                 snapshot(
-                    selection = Selection(meeting, tapAt),
+                    selection = Selection(work, workSince),
                     pendingTapAt = tapAt,
                     sentAt = Instant.parse("2026-11-09T02:19:04.612Z"),
                     queuedTapCount = 1,
+                    unsentTap = UnconfirmedTap(SelectionRequest.Select(meeting), tapAt),
                 ),
-            ) { app -> listOf("Recording project-a / meeting", "since 02:19 UTC", "Saving… sent 02:19:04", "Queue 1 · app $app") },
+            ) { app -> listOf("Not saved: project-a / meeting", "tapped 02:19 UTC", "Saving… sent 02:19:04", "Queue 1 · app $app") },
             StatusCase(
                 "three unanswered taps count three in the queue line",
                 snapshot(
-                    selection = Selection(meeting, tapAt),
+                    selection = Selection(work, workSince),
                     pendingTapAt = tapAt,
                     sentAt = Instant.parse("2026-11-09T02:19:04.612Z"),
                     queuedTapCount = 3,
+                    unsentTap = UnconfirmedTap(SelectionRequest.Select(meeting), tapAt),
                 ),
-            ) { app -> listOf("Recording project-a / meeting", "since 02:19 UTC", "Saving… sent 02:19:04", "Queue 3 · app $app") },
+            ) { app -> listOf("Not saved: project-a / meeting", "tapped 02:19 UTC", "Saving… sent 02:19:04", "Queue 3 · app $app") },
             StatusCase(
                 "waiting for the network shows the oldest unsent tap time",
                 snapshot(
-                    selection = Selection(meeting, tapAt),
+                    selection = Selection(work, workSince),
                     fetchedAt = fetchedAt,
                     outcome = WidgetOutcome.WaitingForNetwork,
                     pendingTapAt = tapAt,
                     oldestUnsentTapAt = tapAt,
                     queuedTapCount = 2,
+                    unsentTap = UnconfirmedTap(SelectionRequest.Select(meeting), tapAt),
                 ),
-            ) { app -> listOf("Recording project-a / meeting", "since 02:19 UTC", "Waiting for network since 02:19:03", "Queue 2 · app $app") },
+            ) { app -> listOf("Not saved: project-a / meeting", "tapped 02:19 UTC", "⚠ Waiting for network since 02:19:03", "Queue 2 · app $app") },
             StatusCase(
                 "a successful save shows the response time and the round trip in seconds",
                 snapshot(
@@ -175,10 +187,11 @@ class WidgetStatusDetailTest {
         cases.forEach { case ->
             val status = factory.statusText(
                 snapshot(
-                    selection = Selection(meeting, case.tappedAt),
+                    selection = Selection(work, workSince),
                     pendingTapAt = case.tappedAt,
                     sentAt = case.sentAt,
                     queuedTapCount = 1,
+                    unsentTap = UnconfirmedTap(SelectionRequest.Select(meeting), case.tappedAt),
                 ),
                 now,
             )
