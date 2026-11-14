@@ -11,6 +11,7 @@ import com.hiromishikata.timetrackingradio.adapter.store.KeyValueDiagnosticLogRe
 import com.hiromishikata.timetrackingradio.adapter.store.KeyValueWidgetSettingsRepository
 import com.hiromishikata.timetrackingradio.adapter.store.SETTINGS_PREFERENCES_NAME
 import com.hiromishikata.timetrackingradio.adapter.store.SharedPreferencesKeyValueStore
+import com.hiromishikata.timetrackingradio.adapter.widget.deviceStateExceptionSuffixes
 import com.hiromishikata.timetrackingradio.domain.ApkDownloadRepository
 import com.hiromishikata.timetrackingradio.domain.DiagnosticRecorder
 import com.hiromishikata.timetrackingradio.domain.DiagnosticSink
@@ -31,7 +32,11 @@ class UpdateCheckWorker(context: Context, parameters: WorkerParameters) : Corout
             applicationContext.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE),
         )
         val endpointUrl = KeyValueWidgetSettingsRepository(store).read()?.endpointUrl.orEmpty()
-        val recorder = DiagnosticRecorder(KeyValueDiagnosticLogRepository(store), endpointKeySecrets(endpointUrl)) { Instant.now() }
+        val recorder = DiagnosticRecorder(
+            KeyValueDiagnosticLogRepository(store),
+            endpointKeySecrets(endpointUrl),
+            deviceStateExceptionSuffixes(applicationContext),
+        ) { Instant.now() }
         val useCase = UpdateCheckUseCase(
             releaseRepositoryFactory(endpointUrl, recorder),
             downloaderFactory(applicationContext.cacheDir),

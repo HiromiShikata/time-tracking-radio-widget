@@ -28,6 +28,7 @@ enum class DiagnosticEventType(val code: String) {
     APP_STARTED("app_started"),
     WORK_STARTED("work_started"),
     WIDGET_STATUS("widget_status"),
+    DEVICE_STATE_CHANGED("device_state_changed"),
 }
 
 enum class RetryKind(val code: String) {
@@ -81,10 +82,16 @@ interface DiagnosticsUploadRepository {
 class DiagnosticRecorder(
     private val log: DiagnosticLogRepository,
     private val secrets: Set<String>,
+    private val detailSuffixFor: (DiagnosticEventType) -> String?,
     private val clock: () -> Instant,
 ) : DiagnosticSink {
+    constructor(log: DiagnosticLogRepository, secrets: Set<String>, clock: () -> Instant) :
+        this(log, secrets, { null }, clock)
+
     override fun record(type: DiagnosticEventType, detail: String) {
-        log.append(clock(), type, scrubSecrets(detail, secrets))
+        val suffix = detailSuffixFor(type)
+        val fullDetail = if (suffix == null) detail else "$detail, $suffix"
+        log.append(clock(), type, scrubSecrets(fullDetail, secrets))
     }
 }
 

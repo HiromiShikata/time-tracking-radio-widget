@@ -86,7 +86,10 @@ class WidgetDiagnosticDetailTest {
         }
         val entries = log().readAll().reversed()
         assertEquals(
-            "tapped_at=$tappedAt, delay_ms=2500, run_attempt=3, network_active=true, transports=wifi, validated=true, metered=false, background_restricted=false, data_saver=false",
+            "tapped_at=$tappedAt, delay_ms=2500, run_attempt=3, network_present=true, transports=cellular, validated=false, " +
+                "metered=true, suspended=true, data_saver=disabled, device_idle_mode=false, light_idle_mode=false, " +
+                "power_save_mode=false, ignores_battery_optimizations=false, standby_bucket=ACTIVE, " +
+                "background_restricted=false, process_importance=foreground",
             entries.single { it.type == DiagnosticEventType.WORK_STARTED }.detail,
         )
         val workStartedIndex = entries.indexOfFirst { it.type == DiagnosticEventType.WORK_STARTED }

@@ -276,7 +276,7 @@ class WidgetController(
         val delayMillis = Duration.between(tappedAt, clock()).toMillis()
         recorderFor(settings.read()).record(
             DiagnosticEventType.WORK_STARTED,
-            workStartedDetail(tappedAt, delayMillis, run.runAttemptCount, run.readNetwork()),
+            workStartedDetail(tappedAt, delayMillis, run.runAttemptCount, readDeviceStateSnapshot(context)),
         )
     }
 
@@ -379,6 +379,7 @@ class WidgetController(
     private fun recorderFor(current: WidgetSettings?): DiagnosticRecorder = DiagnosticRecorder(
         diagnosticLog,
         endpointKeySecrets(current?.endpointUrl.orEmpty()),
+        deviceStateExceptionSuffixes(context),
     ) { Instant.now() }
 
     private fun selectionsFor(current: WidgetSettings): HttpSelectionRepository {
