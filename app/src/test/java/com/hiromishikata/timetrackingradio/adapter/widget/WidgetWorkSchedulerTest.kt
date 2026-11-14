@@ -144,7 +144,7 @@ class WidgetWorkSchedulerTest {
     fun aTapIsNotStartedWhileNoNetworkIsAvailable() {
         val transport = EchoSelectionTransport()
         WidgetSelectionWorker.controllerFactory = { WidgetController(it, { transport }, { transport }, publish = { _, _ -> }) }
-        SelectionWidgetProvider().onReceive(context, cellTapIntent(first.project, first.activity.code))
+        SelectionCellTapReceiver().onReceive(context, cellTapIntent(first.project, first.activity.code))
         awaitUniqueWork(context, WidgetSelectionWorker.UNIQUE_WORK_NAME, "the tap being queued") { it.isNotEmpty() }
         val deadline = System.currentTimeMillis() + 2_000
         while (System.currentTimeMillis() < deadline) {
@@ -171,7 +171,7 @@ class WidgetWorkSchedulerTest {
         }
         SelectionWidgetProvider.controllerFactory = factory
         WidgetSelectionWorker.controllerFactory = factory
-        SelectionWidgetProvider().onReceive(context, cellTapIntent(first.project, first.activity.code))
+        SelectionCellTapReceiver().onReceive(context, cellTapIntent(first.project, first.activity.code))
         meetConstraintsOnceQueued(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
         assertTrue("the first attempt was made", failedFirstAttempt.await(30, TimeUnit.SECONDS))
         awaitUniqueWork(context, WidgetWorkScheduler.DRAIN_RETRY_UNIQUE_WORK_NAME, "the tap's retry being scheduled") { infos ->
@@ -206,7 +206,7 @@ class WidgetWorkSchedulerTest {
         }
         SelectionWidgetProvider.controllerFactory = factory
         WidgetSelectionWorker.controllerFactory = factory
-        SelectionWidgetProvider().onReceive(context, cellTapIntent(first.project, first.activity.code))
+        SelectionCellTapReceiver().onReceive(context, cellTapIntent(first.project, first.activity.code))
         meetConstraintsOnceQueued(context, WidgetSelectionWorker.UNIQUE_WORK_NAME)
         assertTrue("the first attempt was made", failedFirstAttempt.await(30, TimeUnit.SECONDS))
         awaitUniqueWork(context, WidgetWorkScheduler.DRAIN_RETRY_UNIQUE_WORK_NAME, "the tap's retry being scheduled") { infos ->

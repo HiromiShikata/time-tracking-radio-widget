@@ -27,6 +27,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowLog
 import java.net.URISyntaxException
+import java.time.Instant
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = TestApplication::class)
@@ -58,7 +59,7 @@ class SelectionWidgetProviderTest {
         )
         cases.forEach { (name, intent) ->
             ShadowLog.clear()
-            SelectionWidgetProvider().onReceive(context, intent)
+            SelectionCellTapReceiver().onReceive(context, intent)
             val errors = ShadowLog.getLogsForTag("SelectionWidget").filter { it.type == Log.ERROR }
             assertTrue("case=$name", errors.any { it.msg == "tap intent has no valid cell" })
             assertEquals(
@@ -85,7 +86,7 @@ class SelectionWidgetProviderTest {
         val forbidden = ForbiddenTransport()
         val rendered = mutableListOf<WidgetSnapshot>()
         SelectionWidgetProvider.controllerFactory = { WidgetController(it, { forbidden }, { forbidden }, publish = { _, snapshot -> rendered += snapshot }) }
-        SelectionWidgetProvider().onReceive(context, tapIntent("project-a", "meeting"))
+        SelectionCellTapReceiver().onReceive(context, tapIntent("project-a", "meeting"))
         assertEquals(0, forbidden.calls)
         assertTrue(rendered.any { it.sending == SelectionRequest.Select(CellKey("project-a", ActivityKind.MEETING)) })
         assertTrue(
@@ -94,6 +95,56 @@ class SelectionWidgetProviderTest {
             },
         )
         assertEquals(1, uniqueWorkInfos(context, WidgetSelectionWorker.UNIQUE_WORK_NAME).size)
+    }
+
+    @Test
+    fun aValidTapIsRecordedWithItsTappedTimeAndSelectRequestAndItsWorkIsEnqueued() {
+        KeyValueWidgetSettingsRepository(widgetPreferences(context)).write(WIDGET_TEST_SETTINGS)
+        val forbidden = ForbiddenTransport()
+        SelectionWidgetProvider.controllerFactory = { WidgetController(it, { forbidden }, { forbidden }, publish = { _, _ -> }) }
+        val cases = listOf(
+            "work in project-b" to CellKey("project-b", ActivityKind.WORK),
+            "meeting in project-a" to CellKey("project-a", ActivityKind.MEETING),
+        )
+        cases.forEach { (name, cell) ->
+            val before = Instant.ofEpochMilli(System.currentTimeMillis())
+            SelectionCellTapReceiver().onReceive(context, cellTapIntent(cell.project, cell.activity.code))
+            val after = Instant.ofEpochMilli(System.currentTimeMillis())
+            val detail = widgetDiagnosticLog(context).readAll()
+                .first { it.type == DiagnosticEventType.TAP_RECEIVED }.detail
+            val fields = Regex("tapped_at=([^,]+), project=([^,]+), activity=([^,]+), request=select, queued_taps=\\d+, work_id=.+")
+                .matchEntire(detail)
+            assertTrue("case=$name detail=$detail", fields != null)
+            val tappedAt = Instant.parse(fields!!.groupValues[1])
+            assertFalse("case=$name", tappedAt.isBefore(before))
+            assertFalse("case=$name", tappedAt.isAfter(after))
+            assertEquals("case=$name", cell.project, fields.groupValues[2])
+            assertEquals("case=$name", cell.activity.code, fields.groupValues[3])
+        }
+        assertEquals(0, forbidden.calls)
+        assertTrue(uniqueWorkInfos(context, WidgetSelectionWorker.UNIQUE_WORK_NAME).isNotEmpty())
+    }
+
+    @Test
+    fun aValidTapDeliveredToTheProviderIsNotQueuedAndTouchesNoController() {
+        KeyValueWidgetSettingsRepository(widgetPreferences(context)).write(WIDGET_TEST_SETTINGS)
+        val forbidden = ForbiddenTransport()
+        var controllersCreated = 0
+        SelectionWidgetProvider.controllerFactory = {
+            controllersCreated += 1
+            WidgetController(it, { forbidden }, { forbidden }, publish = { _, _ -> })
+        }
+        val cases = listOf(
+            "work in project-b" to CellKey("project-b", ActivityKind.WORK),
+            "meeting in project-a" to CellKey("project-a", ActivityKind.MEETING),
+        )
+        cases.forEach { (name, cell) ->
+            SelectionWidgetProvider().onReceive(context, cellTapIntent(cell.project, cell.activity.code))
+            assertTrue("case=$name", widgetDiagnosticLog(context).readAll().none { it.type == DiagnosticEventType.TAP_RECEIVED })
+            assertTrue("case=$name", uniqueWorkInfos(context, WidgetSelectionWorker.UNIQUE_WORK_NAME).isEmpty())
+        }
+        assertEquals(0, controllersCreated)
+        assertEquals(0, forbidden.calls)
     }
 
     @Test

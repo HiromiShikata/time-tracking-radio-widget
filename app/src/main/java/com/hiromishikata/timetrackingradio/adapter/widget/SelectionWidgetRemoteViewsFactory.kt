@@ -95,7 +95,7 @@ class SelectionWidgetRemoteViewsFactory(private val context: Context) {
     }
 
     private fun tapPendingIntent(rowIndex: Int, cell: CellKey): PendingIntent {
-        val intent = Intent(context, SelectionWidgetProvider::class.java)
+        val intent = Intent(context, SelectionCellTapReceiver::class.java)
             .setAction(SelectionWidgetProvider.ACTION_CELL_TAP)
             .setData("timetrackingradio://cell/$rowIndex/${cell.activity.code}".toUri())
             .putExtra(SelectionWidgetProvider.EXTRA_PROJECT, cell.project)

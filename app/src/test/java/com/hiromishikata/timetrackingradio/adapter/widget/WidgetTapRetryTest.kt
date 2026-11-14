@@ -93,7 +93,7 @@ class WidgetTapRetryTest {
     fun aTransientFailureIsNextAttemptedWithinSixtySecondsOverManyAttempts() {
         val network = ProjectNetwork(first.project)
         installTransport(network.transport)
-        SelectionWidgetProvider().onReceive(context, tapIntent(first))
+        SelectionCellTapReceiver().onReceive(context, tapIntent(first))
         meetConstraintsOfAllWidgetWork(context)
         repeat(ATTEMPTS) { index ->
             val attempt = index + 1
@@ -123,7 +123,7 @@ class WidgetTapRetryTest {
     fun aTransientFailureRecordsItsRetryScheduleInTheDiagnosticLog() {
         val network = ProjectNetwork(first.project)
         installTransport(network.transport)
-        SelectionWidgetProvider().onReceive(context, tapIntent(first))
+        SelectionCellTapReceiver().onReceive(context, tapIntent(first))
         meetConstraintsOfAllWidgetWork(context)
         awaitCondition("the retry schedule is recorded") {
             meetConstraintsOfAllWidgetWork(context)
@@ -140,8 +140,8 @@ class WidgetTapRetryTest {
     fun aLaterTapIsSentWhileAnEarlierTapWaitsForItsRetry() {
         val network = ProjectNetwork(first.project)
         installTransport(network.transport)
-        SelectionWidgetProvider().onReceive(context, tapIntent(first))
-        SelectionWidgetProvider().onReceive(context, tapIntent(second))
+        SelectionCellTapReceiver().onReceive(context, tapIntent(first))
+        SelectionCellTapReceiver().onReceive(context, tapIntent(second))
         awaitCondition("the later tap is sent while the earlier tap waits") {
             meetConstraintsOfAllWidgetWork(context)
             network.transport.requests.any { it.method == "POST" && selectedProjectOf(it) == second.project }
@@ -161,12 +161,12 @@ class WidgetTapRetryTest {
             }
         }
         installTransport(transport)
-        SelectionWidgetProvider().onReceive(context, tapIntent(first))
+        SelectionCellTapReceiver().onReceive(context, tapIntent(first))
         meetConstraintsOfAllWidgetWork(context)
         awaitCondition("the older tap fails once") { transport.requests.count { it.method == "POST" } >= 1 }
         failing.set(false)
         val known = pendingWidgetWorkIds(context)
-        SelectionWidgetProvider().onReceive(context, tapIntent(second))
+        SelectionCellTapReceiver().onReceive(context, tapIntent(second))
         awaitCondition("both taps are answered") {
             meetConstraintsOfWidgetWorkNotIn(context, known)
             answered.contains(second.project)
@@ -178,12 +178,12 @@ class WidgetTapRetryTest {
     fun aNewTapSendsThePendingTapWithoutWaitingForItsRetryDelay() {
         val network = ProjectNetwork(first.project)
         installTransport(network.transport)
-        SelectionWidgetProvider().onReceive(context, tapIntent(first))
+        SelectionCellTapReceiver().onReceive(context, tapIntent(first))
         meetConstraintsOfAllWidgetWork(context)
         awaitCondition("the first tap fails once") { network.posts() >= 1 }
         network.failing.set(false)
         val known = pendingWidgetWorkIds(context)
-        SelectionWidgetProvider().onReceive(context, tapIntent(second))
+        SelectionCellTapReceiver().onReceive(context, tapIntent(second))
         awaitCondition("the pending tap is sent when a new tap arrives", SHORT_WAIT_MILLIS) {
             meetConstraintsOfWidgetWorkNotIn(context, known)
             network.answeredPosts() >= 1 && network.transport.requests.any { it.method == "POST" && selectedProjectOf(it) == second.project }
@@ -194,7 +194,7 @@ class WidgetTapRetryTest {
     fun aWidgetUpdateSendsThePendingTapWithoutWaitingForItsRetryDelay() {
         val network = ProjectNetwork(first.project)
         installTransport(network.transport)
-        SelectionWidgetProvider().onReceive(context, tapIntent(first))
+        SelectionCellTapReceiver().onReceive(context, tapIntent(first))
         meetConstraintsOfAllWidgetWork(context)
         awaitCondition("the first tap fails once") { network.posts() >= 1 }
         network.failing.set(false)
@@ -210,7 +210,7 @@ class WidgetTapRetryTest {
     fun openingTheSettingsScreenSendsThePendingTapWithoutWaitingForItsRetryDelay() {
         val network = ProjectNetwork(first.project)
         installTransport(network.transport)
-        SelectionWidgetProvider().onReceive(context, tapIntent(first))
+        SelectionCellTapReceiver().onReceive(context, tapIntent(first))
         meetConstraintsOfAllWidgetWork(context)
         awaitCondition("the first tap fails once") { network.posts() >= 1 }
         network.failing.set(false)
