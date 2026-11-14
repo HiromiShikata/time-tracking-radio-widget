@@ -30,7 +30,7 @@ import java.time.Instant
 
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [34], application = TestApplication::class, qualifiers = "ja-port-xhdpi")
+@Config(sdk = [34], application = TestApplication::class, qualifiers = "port-xhdpi")
 class UnsentTapScreenshotRenderingTest {
     private val context: Context = RuntimeEnvironment.getApplication()
     private val settings = WidgetSettings("https://example.com/exec?key=example", listOf("alpha", "beta"))
