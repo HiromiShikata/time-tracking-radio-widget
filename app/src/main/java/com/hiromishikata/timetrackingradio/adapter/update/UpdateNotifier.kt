@@ -1,6 +1,7 @@
 package com.hiromishikata.timetrackingradio.adapter.update
 
 import android.Manifest
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -15,14 +16,26 @@ import androidx.core.content.ContextCompat
 import com.hiromishikata.timetrackingradio.R
 import com.hiromishikata.timetrackingradio.adapter.store.SETTINGS_PREFERENCES_NAME
 import com.hiromishikata.timetrackingradio.adapter.store.SharedPreferencesKeyValueStore
+import com.hiromishikata.timetrackingradio.domain.AnnounceOutcome
 import com.hiromishikata.timetrackingradio.domain.ChannelImportance
 import com.hiromishikata.timetrackingradio.domain.InterruptionFilter
 import com.hiromishikata.timetrackingradio.domain.NotificationConditions
 import com.hiromishikata.timetrackingradio.domain.SemanticVersion
+import com.hiromishikata.timetrackingradio.domain.StoredUpdateAlert
 import com.hiromishikata.timetrackingradio.domain.UpdateAnnouncer
+import com.hiromishikata.timetrackingradio.domain.decideUpdateAlert
 import java.io.File
+import java.time.Instant
+import java.time.format.DateTimeParseException
 
-class UpdateNotifier(private val context: Context) : UpdateAnnouncer {
+internal const val LAST_ALERT_VERSION_KEY = "last_announced_update_version"
+internal const val LAST_ALERT_TIME_KEY = "last_update_alert_at"
+
+class UpdateNotifier(
+    private val context: Context,
+    private val clock: () -> Instant = { Instant.now() },
+    private val postOverride: ((Int, Notification) -> Unit)? = null,
+) : UpdateAnnouncer {
     override fun notificationsPermitted(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
@@ -44,28 +57,19 @@ class UpdateNotifier(private val context: Context) : UpdateAnnouncer {
         manager().activeNotifications.any { it.id == NOTIFICATION_ID && it.tag == null }
     }
 
-    private fun manager(): NotificationManager =
-        context.getSystemService(NotificationManager::class.java)
-            ?: throw IllegalStateException("the notification service is not available")
-
-    private fun <T> readOrNull(what: String, read: () -> T?): T? = try {
-        read()
-    } catch (failure: Exception) {
-        Log.w(TAG, "could not read the $what: ${failure.message}")
-        null
-    }
-
-    override fun announce(version: SemanticVersion, apk: File): Boolean {
+    override fun announce(version: SemanticVersion, apk: File): AnnounceOutcome {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         ) {
             Log.w(TAG, "notifications are not permitted; update $version was not announced")
-            return false
+            return AnnounceOutcome.NOT_PERMITTED
         }
-        ensureChannel()
         val store = announcementStore()
-        val alertOnlyOnce = store.read(LAST_ANNOUNCED_VERSION_KEY) == version.toString()
+        val now = clock()
+        val outcome = decideUpdateAlert(version.toString(), readStoredAlert(store), isUpdateNotificationActive(), now)
+        if (!outcome.posted) return outcome
+        ensureChannel()
         val intent = Intent(context, UpdateInstallActivity::class.java)
             .putExtra(UpdateInstallActivity.EXTRA_APK_PATH, apk.absolutePath)
         val pending = PendingIntent.getActivity(
@@ -80,16 +84,46 @@ class UpdateNotifier(private val context: Context) : UpdateAnnouncer {
             .setContentText(context.getString(R.string.update_available, version.toString()))
             .setContentIntent(pending)
             .setOngoing(false)
-            .setOnlyAlertOnce(alertOnlyOnce)
+            .setOnlyAlertOnce(outcome == AnnounceOutcome.SILENT_UPDATE)
             .setAutoCancel(true)
             .build()
-        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
-        store.write(LAST_ANNOUNCED_VERSION_KEY, version.toString())
-        return true
+        val override = postOverride
+        if (override != null) {
+            override(NOTIFICATION_ID, notification)
+        } else {
+            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+        }
+        if (outcome == AnnounceOutcome.ALERTED) {
+            store.write(LAST_ALERT_VERSION_KEY, version.toString())
+            store.write(LAST_ALERT_TIME_KEY, now.toString())
+        }
+        return outcome
+    }
+
+    private fun manager(): NotificationManager =
+        context.getSystemService(NotificationManager::class.java)
+            ?: throw IllegalStateException("the notification service is not available")
+
+    private fun <T> readOrNull(what: String, read: () -> T?): T? = try {
+        read()
+    } catch (failure: Exception) {
+        Log.w(TAG, "could not read the $what: ${failure.message}")
+        null
     }
 
     private fun announcementStore(): SharedPreferencesKeyValueStore =
         SharedPreferencesKeyValueStore(context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE))
+
+    private fun readStoredAlert(store: SharedPreferencesKeyValueStore): StoredUpdateAlert? {
+        val version = store.read(LAST_ALERT_VERSION_KEY) ?: return null
+        val alertedAt = store.read(LAST_ALERT_TIME_KEY) ?: return null
+        return try {
+            StoredUpdateAlert(version, Instant.parse(alertedAt))
+        } catch (unparseable: DateTimeParseException) {
+            Log.w(TAG, "stored update alert time is not an instant; the update is alerted again")
+            null
+        }
+    }
 
     private fun ensureChannel() {
         val manager = context.getSystemService(NotificationManager::class.java)
@@ -105,6 +139,5 @@ class UpdateNotifier(private val context: Context) : UpdateAnnouncer {
         const val CHANNEL_ID = "app-update-available"
         const val NOTIFICATION_ID = 1
         const val REQUEST_CODE = 1
-        const val LAST_ANNOUNCED_VERSION_KEY = "last_announced_update_version"
     }
 }

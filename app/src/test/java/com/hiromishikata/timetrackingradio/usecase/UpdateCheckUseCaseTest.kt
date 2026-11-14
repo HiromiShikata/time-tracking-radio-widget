@@ -1,6 +1,7 @@
 package com.hiromishikata.timetrackingradio.usecase
 
 import com.hiromishikata.timetrackingradio.domain.ApkDownloadException
+import com.hiromishikata.timetrackingradio.domain.AnnounceOutcome
 import com.hiromishikata.timetrackingradio.domain.ApkDownloadRepository
 import com.hiromishikata.timetrackingradio.domain.ChannelImportance
 import com.hiromishikata.timetrackingradio.domain.InterruptionFilter
@@ -53,15 +54,16 @@ class UpdateCheckUseCaseTest {
         private val permitted: Boolean = true,
         private val conditions: NotificationConditions = visibleConditions,
         private val active: Boolean? = true,
+        private val outcome: AnnounceOutcome = AnnounceOutcome.ALERTED,
     ) : UpdateAnnouncer {
         val announced = mutableListOf<Pair<SemanticVersion, File>>()
 
         override fun notificationsPermitted(): Boolean = permitted
 
-        override fun announce(version: SemanticVersion, apk: File): Boolean {
+        override fun announce(version: SemanticVersion, apk: File): AnnounceOutcome {
             order.events += "announce"
             announced += version to apk
-            return permitted
+            return outcome
         }
 
         override fun notificationConditions(): NotificationConditions = conditions
@@ -72,7 +74,7 @@ class UpdateCheckUseCaseTest {
     private class ThrowingAnnouncer(private val failure: RuntimeException) : UpdateAnnouncer {
         override fun notificationsPermitted(): Boolean = true
 
-        override fun announce(version: SemanticVersion, apk: File): Boolean = throw failure
+        override fun announce(version: SemanticVersion, apk: File): AnnounceOutcome = throw failure
 
         override fun notificationConditions(): NotificationConditions = visibleConditions
 
@@ -199,7 +201,7 @@ class UpdateCheckUseCaseTest {
                 "1.0.1",
                 { LatestRelease(SemanticVersion(1, 0, 2), apkUrl, apkSize) },
                 true,
-                exact("installed=1.0.1, latest=v1.0.2, decision=newer_available, download=ok, notifications_permitted=true, notified=true, $VISIBLE_DETAIL, notification_active=true"),
+                exact("installed=1.0.1, latest=v1.0.2, decision=newer_available, download=ok, notifications_permitted=true, notified=true, announce=alerted, $VISIBLE_DETAIL, notification_active=true"),
             ),
             Case(
                 "newer and notifications not permitted",
@@ -448,6 +450,29 @@ class UpdateCheckUseCaseTest {
                 "interruption_filter=${case.conditions.interruptionFilter.label}"
             assertTrue("${case.name}: $detail", detail.contains(conditionsPart))
             assertTrue("${case.name}: $detail", detail.endsWith(case.expectedSuffix))
+        }
+    }
+
+    @Test
+    fun theAnnounceBranchIsRecordedInTheCheckDetail() {
+        data class Case(val outcome: AnnounceOutcome, val expectedNotified: Boolean)
+        val cases = listOf(
+            Case(AnnounceOutcome.ALERTED, true),
+            Case(AnnounceOutcome.SILENT_UPDATE, true),
+            Case(AnnounceOutcome.SKIPPED_RECENTLY_DISMISSED, false),
+        )
+        cases.forEach { case ->
+            val diagnostics = RecordingDiagnostics()
+            useCase(
+                FakeReleaseRepository { LatestRelease(SemanticVersion(1, 0, 2), apkUrl, apkSize) },
+                announcer = RecordingAnnouncer(outcome = case.outcome),
+                diagnostics = diagnostics,
+            ).execute("1.0.1")
+            val (_, detail) = diagnostics.recorded.single()
+            assertTrue(
+                "${case.outcome}: $detail",
+                detail.contains("notified=${case.expectedNotified}, announce=${case.outcome.label}, "),
+            )
         }
     }
 }

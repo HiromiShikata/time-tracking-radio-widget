@@ -1,6 +1,7 @@
 package com.hiromishikata.timetrackingradio.usecase
 
 import com.hiromishikata.timetrackingradio.domain.ApkDownloadException
+import com.hiromishikata.timetrackingradio.domain.AnnounceOutcome
 import com.hiromishikata.timetrackingradio.domain.ApkDownloadRepository
 import com.hiromishikata.timetrackingradio.domain.CommunicationFailedException
 import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
@@ -64,14 +65,23 @@ class UpdateCheckUseCase(
             recordCheck(installedName, latestText, DECISION_NEWER_AVAILABLE, DOWNLOAD_FAILED, failure.message.orEmpty(), permitted, false)
             return if (failure.networkReason) UpdateCheckStatus.RETRY_DOWNLOAD else UpdateCheckStatus.RETRY
         }
-        val notified = try {
+        val outcome = try {
             announcer.announce(decision.version, apk)
         } catch (failure: Exception) {
             recordCheck(installedName, latestText, DECISION_NEWER_AVAILABLE, DOWNLOAD_OK, failure.message.orEmpty(), permitted, false)
             return UpdateCheckStatus.FAILED
         }
-        val activeAfterPost = if (notified) announcer.isUpdateNotificationActive() else null
-        return complete(installedName, latestText, DECISION_NEWER_AVAILABLE, DOWNLOAD_OK, permitted, notified, activeAfterPost)
+        val activeAfterPost = if (outcome.posted) announcer.isUpdateNotificationActive() else null
+        return complete(
+            installedName,
+            latestText,
+            DECISION_NEWER_AVAILABLE,
+            DOWNLOAD_OK,
+            permitted,
+            outcome.posted,
+            activeAfterPost,
+            outcome,
+        )
     }
 
     private fun complete(
@@ -82,9 +92,10 @@ class UpdateCheckUseCase(
         permitted: Boolean,
         notified: Boolean,
         activeAfterPost: Boolean? = null,
+        announce: AnnounceOutcome? = null,
     ): UpdateCheckStatus {
         lastChecked.write(clock())
-        recordCheck(installedName, latestText, decision, download, null, permitted, notified, activeAfterPost)
+        recordCheck(installedName, latestText, decision, download, null, permitted, notified, activeAfterPost, announce)
         return UpdateCheckStatus.COMPLETED
     }
 
@@ -97,13 +108,15 @@ class UpdateCheckUseCase(
         permitted: Boolean,
         notified: Boolean,
         activeAfterPost: Boolean? = null,
+        announce: AnnounceOutcome? = null,
     ) {
         val reasonPart = reason?.let { "reason=$it, " }.orEmpty()
+        val announcePart = announce?.let { ", announce=${it.label}" }.orEmpty()
         val activePart = if (notified) ", ${notificationActiveDetail(activeAfterPost)}" else ""
         diagnostics.record(
             DiagnosticEventType.UPDATE_CHECK,
             "installed=$installedName, latest=$latest, decision=$decision, download=$download, $reasonPart" +
-                "notifications_permitted=$permitted, notified=$notified, " +
+                "notifications_permitted=$permitted, notified=$notified$announcePart, " +
                 notificationConditionsDetail(announcer.notificationConditions()) + activePart,
         )
     }
