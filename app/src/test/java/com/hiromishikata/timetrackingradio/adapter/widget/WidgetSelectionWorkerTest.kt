@@ -122,12 +122,12 @@ class WidgetSelectionWorkerTest {
     }
 
     @Test
-    fun aSelectionRunEnqueuesAnUpdateCheckOnlyWhenTheLastCheckIsOlderThanSixHours() {
+    fun aSelectionRunEnqueuesAnUpdateCheckOnlyWhenTheLastCheckIsOlderThanOneHour() {
         data class Case(val name: String, val lastCheckedAgo: Duration?, val expectEnqueued: Boolean)
         val cases = listOf(
             Case("no timestamp", null, true),
-            Case("seven hours old", Duration.ofHours(7), true),
-            Case("one hour old", Duration.ofHours(1), false),
+            Case("two hours old", Duration.ofHours(2), true),
+            Case("30 minutes old", Duration.ofMinutes(30), false),
         )
         cases.forEach { case ->
             installWorkManagerForTests(context)

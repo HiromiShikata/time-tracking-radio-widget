@@ -27,7 +27,7 @@ object UpdateCheckScheduler {
     const val DOWNLOAD_RETRY_UNIQUE_WORK_NAME = "app-update-download-retry"
     const val CHECK_RETRY_UNIQUE_WORK_NAME = "app-update-check-retry"
     private const val ON_DEMAND_WORK_NAME = "app-update-check-once"
-    private const val INTERVAL_HOURS = 6L
+    private const val INTERVAL_HOURS = 1L
     private const val FOREGROUND_WORK_NAME = "app-update-check-foreground"
     private const val FOREGROUND_CHECK_KEY = "last_foreground_update_check_at"
     private const val TAG = "UpdateCheckScheduler"
@@ -39,7 +39,7 @@ object UpdateCheckScheduler {
             .setConstraints(connectedConstraints())
             .build()
         WorkManager.getInstance(context)
-            .enqueueUniquePeriodicWork(UNIQUE_WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, request)
+            .enqueueUniquePeriodicWork(UNIQUE_WORK_NAME, ExistingPeriodicWorkPolicy.UPDATE, request)
     }
 
     fun lastCheckRepository(context: Context): LastUpdateCheckRepository = KeyValueLastUpdateCheckRepository(
