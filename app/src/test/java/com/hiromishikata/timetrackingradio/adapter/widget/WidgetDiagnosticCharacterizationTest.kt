@@ -12,6 +12,7 @@ import com.hiromishikata.timetrackingradio.domain.NetworkState
 import com.hiromishikata.timetrackingradio.domain.SelectionRequest
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -39,15 +40,17 @@ class WidgetDiagnosticCharacterizationTest {
     }
 
     @Test
-    fun widgetUpdateRequestedIsRecordedAsRefreshForAWidgetRefresh() {
+    fun widgetUpdateRequestedIsRecordedAsRefreshFollowedByTheDeviceStateSnapshot() {
         saveSettings()
         val transport = FakeHttpTransport(ArrayDeque(listOf({ HttpResponse(200, null, selectedMeetingBody) })))
         val controller = WidgetController(context, { transport }, { transport }, publish = { _, _ -> }, clock = { tappedAt })
         runBlocking { controller.refresh() }
-        assertEquals(
-            listOf("refresh"),
-            log().readAll().filter { it.type == DiagnosticEventType.WIDGET_UPDATE_REQUESTED }.map { it.detail },
-        )
+        val details = log().readAll().filter { it.type == DiagnosticEventType.WIDGET_UPDATE_REQUESTED }.map { it.detail }
+        assertEquals("details=$details", 1, details.size)
+        val detail = details.single()
+        assertTrue("detail=$detail", detail.startsWith("refresh, network_present="))
+        val snapshotKeys = detail.removePrefix("refresh, ").split(", ").map { it.substringBefore("=") }
+        assertEquals("detail=$detail", SNAPSHOT_KEYS, snapshotKeys)
     }
 
     @Test
@@ -71,3 +74,19 @@ class WidgetDiagnosticCharacterizationTest {
         }
     }
 }
+
+private val SNAPSHOT_KEYS = listOf(
+    "network_present",
+    "transports",
+    "validated",
+    "metered",
+    "blocked",
+    "data_saver",
+    "device_idle_mode",
+    "light_idle_mode",
+    "power_save_mode",
+    "ignores_battery_optimizations",
+    "standby_bucket",
+    "background_restricted",
+    "process_importance",
+)
