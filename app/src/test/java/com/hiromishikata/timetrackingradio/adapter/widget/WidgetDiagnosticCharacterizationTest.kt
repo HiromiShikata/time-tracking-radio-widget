@@ -80,7 +80,7 @@ private val SNAPSHOT_KEYS = listOf(
     "transports",
     "validated",
     "metered",
-    "blocked",
+    "suspended",
     "data_saver",
     "device_idle_mode",
     "light_idle_mode",

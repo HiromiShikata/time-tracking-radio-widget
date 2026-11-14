@@ -38,7 +38,7 @@ class DeviceStateSnapshotReaderTest {
     @Test
     fun aMissingOrFailingServiceYieldsUnknownForItsFieldsAndNeverThrows() {
         val connectivityFields = "network_present=unknown, transports=unknown, validated=unknown, metered=unknown, " +
-            "blocked=unknown, data_saver=unknown"
+            "suspended=unknown, data_saver=unknown"
         val powerFields = "device_idle_mode=unknown, light_idle_mode=unknown, power_save_mode=unknown, " +
             "ignores_battery_optimizations=unknown"
         val usageStatsFields = "standby_bucket=unknown"

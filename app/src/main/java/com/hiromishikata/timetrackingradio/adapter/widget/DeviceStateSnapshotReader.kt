@@ -24,7 +24,7 @@ private data class NetworkFields(
     val transports: String,
     val validated: String,
     val metered: String,
-    val blocked: String,
+    val suspended: String,
 )
 
 private val UNKNOWN_NETWORK_FIELDS = NetworkFields(UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN)
@@ -40,7 +40,7 @@ fun readDeviceStateSnapshot(context: Context): DeviceStateSnapshot {
         transports = network.transports,
         validated = network.validated,
         metered = network.metered,
-        blocked = network.blocked,
+        suspended = network.suspended,
         dataSaverStatus = readDataSaverStatus(context),
         deviceIdleMode = readField("device_idle_mode", UNKNOWN) {
             powerManager(context).isDeviceIdleMode.toString()
@@ -107,7 +107,7 @@ private fun readNetworkFields(context: Context): NetworkFields = readField("netw
         },
         validated = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)?.toString() ?: UNKNOWN,
         metered = capabilities?.let { !it.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) }?.toString() ?: UNKNOWN,
-        blocked = if (capabilities == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+        suspended = if (capabilities == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
             UNKNOWN
         } else {
             (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_SUSPENDED)).toString()
