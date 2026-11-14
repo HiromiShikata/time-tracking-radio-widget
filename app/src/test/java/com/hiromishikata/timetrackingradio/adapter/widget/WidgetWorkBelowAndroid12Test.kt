@@ -79,7 +79,7 @@ class WidgetWorkBelowAndroid12Test {
         SelectionWidgetProvider.controllerFactory = factory
         WidgetSelectionWorker.controllerFactory = factory
 
-        SelectionWidgetProvider().onReceive(context, cellTapIntent(meeting.project, meeting.activity.code))
+        SelectionCellTapReceiver().onReceive(context, cellTapIntent(meeting.project, meeting.activity.code))
         driveAllWidgetWorkToFinish(context)
 
         assertEquals("work state", WorkInfo.State.SUCCEEDED, uniqueWorkInfos(context, WidgetSelectionWorker.UNIQUE_WORK_NAME).single().state)
