@@ -13,6 +13,8 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.hiromishikata.timetrackingradio.R
+import com.hiromishikata.timetrackingradio.adapter.store.SETTINGS_PREFERENCES_NAME
+import com.hiromishikata.timetrackingradio.adapter.store.SharedPreferencesKeyValueStore
 import com.hiromishikata.timetrackingradio.domain.ChannelImportance
 import com.hiromishikata.timetrackingradio.domain.InterruptionFilter
 import com.hiromishikata.timetrackingradio.domain.NotificationConditions
@@ -62,6 +64,8 @@ class UpdateNotifier(private val context: Context) : UpdateAnnouncer {
             return false
         }
         ensureChannel()
+        val store = announcementStore()
+        val alertOnlyOnce = store.read(LAST_ANNOUNCED_VERSION_KEY) == version.toString()
         val intent = Intent(context, UpdateInstallActivity::class.java)
             .putExtra(UpdateInstallActivity.EXTRA_APK_PATH, apk.absolutePath)
         val pending = PendingIntent.getActivity(
@@ -76,12 +80,16 @@ class UpdateNotifier(private val context: Context) : UpdateAnnouncer {
             .setContentText(context.getString(R.string.update_available, version.toString()))
             .setContentIntent(pending)
             .setOngoing(false)
-            .setOnlyAlertOnce(true)
+            .setOnlyAlertOnce(alertOnlyOnce)
             .setAutoCancel(true)
             .build()
         NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+        store.write(LAST_ANNOUNCED_VERSION_KEY, version.toString())
         return true
     }
+
+    private fun announcementStore(): SharedPreferencesKeyValueStore =
+        SharedPreferencesKeyValueStore(context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE))
 
     private fun ensureChannel() {
         val manager = context.getSystemService(NotificationManager::class.java)
@@ -97,5 +105,6 @@ class UpdateNotifier(private val context: Context) : UpdateAnnouncer {
         const val CHANNEL_ID = "app-update-available"
         const val NOTIFICATION_ID = 1
         const val REQUEST_CODE = 1
+        const val LAST_ANNOUNCED_VERSION_KEY = "last_announced_update_version"
     }
 }

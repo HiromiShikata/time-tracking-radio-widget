@@ -8,6 +8,7 @@ import android.app.NotificationManager
 import android.content.ContextWrapper
 import com.hiromishikata.timetrackingradio.R
 import com.hiromishikata.timetrackingradio.TestApplication
+import com.hiromishikata.timetrackingradio.adapter.store.SETTINGS_PREFERENCES_NAME
 import com.hiromishikata.timetrackingradio.resourceIdOf
 import com.hiromishikata.timetrackingradio.domain.ChannelImportance
 import com.hiromishikata.timetrackingradio.domain.InterruptionFilter
@@ -54,11 +55,34 @@ class UpdateNotifierTest {
     }
 
     @Test
-    fun theNotificationAlertsOnlyOnceSoARepostUpdatesItSilently() {
+    fun theAlertOnlyOnceFlagIsSetOnlyForARepostOfTheLastAnnouncedVersion() {
         shadowOf(context as Application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
-        assertTrue(UpdateNotifier(context).announce(SemanticVersion(1, 0, 2), apk))
-        val notification = shadowOf(manager).allNotifications.single()
-        assertTrue((notification.flags and Notification.FLAG_ONLY_ALERT_ONCE) != 0)
+        data class Case(
+            val name: String,
+            val earlierPosts: List<SemanticVersion>,
+            val version: SemanticVersion,
+            val expectedAlertOnce: Boolean,
+        )
+        val older = SemanticVersion(1, 0, 2)
+        val newer = SemanticVersion(1, 0, 3)
+        val cases = listOf(
+            Case("first post for a version alerts", emptyList(), older, false),
+            Case("re-post of the same version is silent", listOf(older), older, true),
+            Case("newer version while the older one shows alerts", listOf(older), newer, false),
+        )
+        cases.forEach { case ->
+            manager.cancelAll()
+            context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, android.content.Context.MODE_PRIVATE).edit().clear().commit()
+            val notifier = UpdateNotifier(context)
+            case.earlierPosts.forEach { assertTrue(case.name, notifier.announce(it, apk)) }
+            assertTrue(case.name, notifier.announce(case.version, apk))
+            val notification = shadowOf(manager).allNotifications.single()
+            assertEquals(
+                case.name,
+                case.expectedAlertOnce,
+                (notification.flags and Notification.FLAG_ONLY_ALERT_ONCE) != 0,
+            )
+        }
     }
 
     @Test
