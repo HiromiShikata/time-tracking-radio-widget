@@ -158,7 +158,7 @@ internal const val TEST_TAPPED_AT_TEXT = "2026-11-09T02:19:03.112Z"
 
 internal val WAITING_FOR_NETWORK_TEXT = Regex("waiting for (the )?network", RegexOption.IGNORE_CASE)
 
-internal val WAITING_FOR_NETWORK_LINE = Regex("Waiting for network since \\d{2}:\\d{2}:\\d{2}")
+internal val WAITING_FOR_NETWORK_LINE = Regex("⚠ Waiting for network since \\d{2}:\\d{2}:\\d{2}")
 
 internal val SAVING_SENT_LINE = Regex("Saving… sent \\d{2}:\\d{2}:\\d{2}")
 

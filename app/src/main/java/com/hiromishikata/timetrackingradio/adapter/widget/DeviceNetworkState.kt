@@ -26,6 +26,10 @@ fun readDeviceNetworkState(context: Context): NetworkState {
     )
 }
 
+fun isDataSaverRestricted(context: Context): Boolean =
+    context.getSystemService(ConnectivityManager::class.java).restrictBackgroundStatus ==
+        ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED
+
 internal fun networkStateOf(
     activeNetwork: Boolean,
     hasTransport: (Int) -> Boolean,

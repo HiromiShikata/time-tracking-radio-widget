@@ -40,7 +40,7 @@ class WidgetImmediateSelectionTest {
     private val meeting = CellKey("project-a", ActivityKind.MEETING)
     private val projectBWork = CellKey("project-b", ActivityKind.WORK)
 
-    private data class ProjectionCase(val name: String, val previous: Selection?, val tapped: CellKey, val expectedFilled: CellKey?)
+    private data class UnsentCase(val name: String, val previous: Selection?, val tapped: CellKey, val expectedFilled: CellKey?, val expectedUnsent: CellKey?)
 
     private val tapEntries: List<Pair<String, (WidgetController, CellKey) -> Unit>> = listOf(
         "acceptTap" to { controller, cell -> controller.acceptTap(cell, workEnqueued = false) },
@@ -70,12 +70,23 @@ class WidgetImmediateSelectionTest {
         }
     }
 
+    private fun assertCellMarksAre(snapshot: WidgetSnapshot, filled: CellKey?, unsent: CellKey?, message: String) {
+        listOf(work, meeting).forEach { cell ->
+            val expected = when (cell) {
+                unsent -> R.drawable.cell_unsent
+                filled -> R.drawable.cell_selected
+                else -> R.drawable.cell_unselected
+            }
+            assertEquals("$message cell=$cell", expected, renderedCellDrawableResId(context, snapshot, cell))
+        }
+    }
+
     @Test
-    fun aTapShowsItsProjectedSelectionBeforeAnyNetworkCall() {
+    fun aTapShowsAsUnsentWithoutAnyNetworkCallAndKeepsTheConfirmedSelectionFilled() {
         val cases = listOf(
-            ProjectionCase("no selection fills the tapped cell", null, meeting, meeting),
-            ProjectionCase("a switch fills the tapped cell and empties the previous one", Selection(work, since), meeting, meeting),
-            ProjectionCase("tapping the selected cell shows nothing selected", Selection(meeting, since), meeting, null),
+            UnsentCase("no selection dashes the tapped cell", null, meeting, expectedFilled = null, expectedUnsent = meeting),
+            UnsentCase("a switch keeps the confirmed cell filled and dashes the tapped one", Selection(work, since), meeting, expectedFilled = work, expectedUnsent = meeting),
+            UnsentCase("an unconfirmed clear dashes the confirmed cell", Selection(meeting, since), meeting, expectedFilled = null, expectedUnsent = meeting),
         )
         cases.forEach { case ->
             tapEntries.forEach { (entryName, tap) ->
@@ -85,7 +96,7 @@ class WidgetImmediateSelectionTest {
                 tap(recordingController(transport, rendered), case.tapped)
                 val message = "case=${case.name} entry=$entryName"
                 assertEquals(message, 0, transport.calls)
-                assertFilledCellIs(rendered.last(), case.expectedFilled, message)
+                assertCellMarksAre(rendered.last(), case.expectedFilled, case.expectedUnsent, message)
             }
         }
     }
@@ -98,7 +109,7 @@ class WidgetImmediateSelectionTest {
         val rendered = mutableListOf<WidgetSnapshot>()
         val controller = recordingController(transport, rendered)
         val accepted = controller.acceptTap(meeting, workEnqueued = false)
-        assertFilledCellIs(rendered.last(), meeting, "projected")
+        assertCellMarksAre(rendered.last(), null, meeting, "unsent before the save")
         runBlocking { controller.performTap(meeting, accepted.request, accepted.tappedAt) }
         val saved = rendered.last()
         assertEquals(Selection(meeting, since), saved.selection)
@@ -136,8 +147,8 @@ class WidgetImmediateSelectionTest {
         assertTrue("thrown=$thrown", thrown is NetworkUnavailableException)
         val waiting = rendered.last()
         assertEquals(WidgetOutcome.WaitingForNetwork, waiting.outcome)
-        assertFilledCellIs(waiting, meeting, "the tap stays projected while waiting")
-        assertEquals("Waiting for network since 02:19:03", renderedStatusText(context, waiting).lines()[2])
+        assertCellMarksAre(waiting, null, meeting, "the tap stays unsent while waiting")
+        assertEquals("⚠ Waiting for network since 02:19:03", renderedStatusText(context, waiting).lines()[2])
     }
 
     @Test

@@ -9,9 +9,13 @@ import androidx.core.net.toUri
 import com.hiromishikata.timetrackingradio.R
 import com.hiromishikata.timetrackingradio.domain.ActivityKind
 import com.hiromishikata.timetrackingradio.domain.CellKey
+import com.hiromishikata.timetrackingradio.domain.CellMark
+import com.hiromishikata.timetrackingradio.domain.SelectionRequest
+import com.hiromishikata.timetrackingradio.domain.UnconfirmedTap
 import com.hiromishikata.timetrackingradio.domain.WidgetOutcome
 import com.hiromishikata.timetrackingradio.domain.WidgetSettings
 import com.hiromishikata.timetrackingradio.domain.WidgetSnapshot
+import com.hiromishikata.timetrackingradio.domain.cellMarkOf
 import com.hiromishikata.timetrackingradio.domain.formatUtcHourMinute
 import com.hiromishikata.timetrackingradio.domain.formatUtcHourMinuteSecond
 import java.time.Instant
@@ -31,17 +35,26 @@ class SelectionWidgetRemoteViewsFactory(private val context: Context) {
     }
 
     fun statusText(snapshot: WidgetSnapshot, now: Instant): String {
+        val queueLine = context.getString(R.string.status_queue, snapshot.queuedTapCount.toString(), versionName())
+        return (headLines(snapshot) + stateLine(snapshot, now) + queueLine).joinToString("\n")
+    }
+
+    private fun headLines(snapshot: WidgetSnapshot): List<String> {
+        val unsent = snapshot.latestUnconfirmedTap
         val selection = snapshot.selection
-        val selectionLines = if (selection == null) {
-            listOf(context.getString(R.string.status_not_recording))
-        } else {
-            listOf(
+        return when {
+            unsent != null -> listOf(notSavedLine(unsent), context.getString(R.string.status_tapped, formatUtcHourMinute(unsent.tappedAt)))
+            selection == null -> listOf(context.getString(R.string.status_not_recording))
+            else -> listOf(
                 context.getString(R.string.status_recording, selection.cell.project, selection.cell.activity.code),
                 context.getString(R.string.status_since, formatUtcHourMinute(selection.since)),
             )
         }
-        val queueLine = context.getString(R.string.status_queue, snapshot.queuedTapCount.toString(), versionName())
-        return (selectionLines + stateLine(snapshot, now) + queueLine).joinToString("\n")
+    }
+
+    private fun notSavedLine(unsent: UnconfirmedTap): String = when (val request = unsent.request) {
+        is SelectionRequest.Select -> context.getString(R.string.status_not_saved, request.cell.project, request.cell.activity.code)
+        SelectionRequest.Clear -> context.getString(R.string.status_not_saved_clear)
     }
 
     private fun stateLine(snapshot: WidgetSnapshot, now: Instant): String {
@@ -54,9 +67,11 @@ class SelectionWidgetRemoteViewsFactory(private val context: Context) {
         val roundTripMillis = snapshot.roundTripMillis
         val outcome = snapshot.outcome
         return when {
+            oldestUnsent != null && snapshot.dataSaverRestricted ->
+                context.getString(R.string.status_data_saver_unsent, formatUtcHourMinuteSecond(oldestUnsent))
             oldestUnsent != null -> context.getString(R.string.status_waiting_for_network, formatUtcHourMinuteSecond(oldestUnsent))
-            pending != null -> context.getString(R.string.status_saving, formatUtcHourMinuteSecond(sentAt ?: pending))
             outcome is WidgetOutcome.Rejected -> context.getString(R.string.status_server_rejected, outcome.message)
+            pending != null -> context.getString(R.string.status_saving, formatUtcHourMinuteSecond(sentAt ?: pending))
             outcome == WidgetOutcome.Unreachable -> context.getString(R.string.status_unreachable, formatUtcHourMinute(asOf))
             savedAt != null && roundTripMillis != null && (refreshedAt == null || savedAt >= refreshedAt) -> context.getString(
                 R.string.status_saved,
@@ -79,14 +94,16 @@ class SelectionWidgetRemoteViewsFactory(private val context: Context) {
                 ActivityKind.WORK -> R.id.cell_work
                 ActivityKind.MEETING -> R.id.cell_meeting
             }
-            val selected = snapshot.selection?.cell == cell
-            row.setImageViewResource(
-                iconViewId(viewId),
-                if (selected) R.drawable.cell_selected else R.drawable.cell_unselected,
-            )
+            row.setImageViewResource(iconViewId(viewId), drawableOf(snapshot.cellMarkOf(cell)))
             row.setOnClickPendingIntent(viewId, tapPendingIntent(rowIndex, cell))
         }
         return row
+    }
+
+    private fun drawableOf(mark: CellMark): Int = when (mark) {
+        CellMark.FILLED -> R.drawable.cell_selected
+        CellMark.UNSENT -> R.drawable.cell_unsent
+        CellMark.EMPTY -> R.drawable.cell_unselected
     }
 
     private fun iconViewId(cellViewId: Int): Int = when (cellViewId) {

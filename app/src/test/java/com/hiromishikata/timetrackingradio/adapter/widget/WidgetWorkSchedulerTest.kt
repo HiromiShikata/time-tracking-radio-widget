@@ -156,7 +156,7 @@ class WidgetWorkSchedulerTest {
     }
 
     @Test
-    fun aTapWaitingForTheNetworkKeepsItsProjectedSelectionAndShowsTheWaitingStatusUntilItIsSent() {
+    fun aTapWaitingForTheNetworkKeepsItsUnsentDashAndShowsTheWaitingStatusUntilItIsSent() {
         val failedFirstAttempt = CountDownLatch(1)
         val failFirstAttempt = AtomicBoolean(true)
         val transport = EchoSelectionTransport { request ->
@@ -179,7 +179,7 @@ class WidgetWorkSchedulerTest {
         }
         val waiting = rendered.last()
         assertEquals("the ring stays on the waiting cell", SelectionRequest.Select(first), waiting.sending)
-        assertEquals(R.drawable.cell_selected, renderedCellDrawableResId(context, waiting, first))
+        assertEquals(R.drawable.cell_unsent, renderedCellDrawableResId(context, waiting, first))
         val waitingStatus = renderedStatusText(context, waiting)
         assertTrue("status=$waitingStatus", WAITING_FOR_NETWORK_LINE.matches(stateLineOf(waitingStatus)))
 
