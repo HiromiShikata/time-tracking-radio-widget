@@ -287,13 +287,13 @@ class WidgetSelectionWorkerTest {
     }
 
     @Test
-    fun aTapWhoseNetworkAttemptFailsReturnsToTheWaitingStatusWithItsProjectionUntilTheNextAttempt() {
+    fun aTapWhoseNetworkAttemptFailsReturnsToTheWaitingStatusWithItsUnsentDashUntilTheNextAttempt() {
         transport = EchoSelectionTransport { throw UnknownHostException("unreachable.example") }
         val result = runWorker(acceptedTapInput())
         assertTrue("result=$result", result is ListenableWorker.Result.Success)
         val waiting = rendered.last()
         assertEquals("the sending state stays on the waiting cell", SelectionRequest.Select(meeting), waiting.sending)
-        assertEquals(R.drawable.cell_selected, renderedCellDrawableResId(context, waiting, meeting))
+        assertEquals(R.drawable.cell_unsent, renderedCellDrawableResId(context, waiting, meeting))
         val status = renderedStatusText(context, waiting)
         assertTrue("status=$status", WAITING_FOR_NETWORK_LINE.matches(stateLineOf(status)))
     }
@@ -370,7 +370,7 @@ class WidgetSelectionWorkerTest {
         val last = rendered.last()
         val status = renderedStatusText(context, last)
         assertEquals("the stopped tap keeps its sending state", SelectionRequest.Select(meeting), last.sending)
-        assertEquals("the stopped tap keeps its projected selection", R.drawable.cell_selected, renderedCellDrawableResId(context, last, meeting))
+        assertEquals("the stopped tap stays unsent", R.drawable.cell_unsent, renderedCellDrawableResId(context, last, meeting))
         assertTrue("status=$status", WAITING_FOR_NETWORK_LINE.matches(stateLineOf(status)))
         assertEquals(SelectionRequest.Select(meeting), widgetSnapshots(context).read().sending)
     }
