@@ -47,6 +47,10 @@
         </receiver>
 
         <receiver
+            android:name=".adapter.widget.SelectionCellTapReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".adapter.widget.AppUpdatedReceiver"
             android:exported="false">
             <intent-filter>
