@@ -82,9 +82,16 @@ fun readDeviceStateSnapshot(context: Context): DeviceStateSnapshot {
     )
 }
 
-/** The diagnostic detail suffix for exception events: the device state at the moment the exception is recorded. */
+/**
+ * The diagnostic detail suffix for exception and widget_update_requested events: the device state at the moment the
+ * event is recorded. Other event types get no suffix.
+ */
 fun deviceStateExceptionSuffixes(context: Context): (DiagnosticEventType) -> String? = { type ->
-    if (type == DiagnosticEventType.EXCEPTION) formatDeviceStateSnapshot(readDeviceStateSnapshot(context)) else null
+    if (type == DiagnosticEventType.EXCEPTION || type == DiagnosticEventType.WIDGET_UPDATE_REQUESTED) {
+        formatDeviceStateSnapshot(readDeviceStateSnapshot(context))
+    } else {
+        null
+    }
 }
 
 private fun readNetworkFields(context: Context): NetworkFields = readField("network", UNKNOWN_NETWORK_FIELDS) {
