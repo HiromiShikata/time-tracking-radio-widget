@@ -359,20 +359,20 @@ class WidgetSelectionWorkerTest {
         val input = acceptedTapInput()
         val heldWork = WidgetScope.mutex
         runBlocking { heldWork.lock() }
-        try {
+        val (last, stored) = try {
             val worker = TestListenableWorkerBuilder<WidgetSelectionWorker>(context).setInputData(input).build()
             val outcome = worker.startWork()
             worker.onStopped()
             awaitFinished(outcome)
+            rendered.last() to widgetSnapshots(context).read().sending
         } finally {
             heldWork.unlock()
         }
-        val last = rendered.last()
         val status = renderedStatusText(context, last)
         assertEquals("the stopped tap keeps its sending state", SelectionRequest.Select(meeting), last.sending)
         assertEquals("the stopped tap stays unsent", R.drawable.cell_unsent, renderedCellDrawableResId(context, last, meeting))
         assertTrue("status=$status", WAITING_FOR_NETWORK_LINE.matches(stateLineOf(status)))
-        assertEquals(SelectionRequest.Select(meeting), widgetSnapshots(context).read().sending)
+        assertEquals(SelectionRequest.Select(meeting), stored)
     }
 
     @Test
