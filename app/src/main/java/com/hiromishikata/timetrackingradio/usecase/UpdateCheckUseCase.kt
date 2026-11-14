@@ -57,7 +57,15 @@ class UpdateCheckUseCase(
         permitted: Boolean,
     ): UpdateCheckStatus {
         if (!permitted) {
-            return complete(installedName, latestText, DECISION_NEWER_AVAILABLE, DOWNLOAD_SKIPPED, permitted, false)
+            return complete(
+                installedName,
+                latestText,
+                DECISION_NEWER_AVAILABLE,
+                DOWNLOAD_SKIPPED,
+                permitted,
+                false,
+                announce = AnnounceOutcome.NOT_PERMITTED,
+            )
         }
         val apk = try {
             downloads.download(decision.apkDownloadUrl, decision.apkSizeBytes, decision.version)

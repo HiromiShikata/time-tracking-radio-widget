@@ -208,7 +208,7 @@ class UpdateCheckUseCaseTest {
                 "1.0.1",
                 { LatestRelease(SemanticVersion(1, 0, 2), apkUrl, apkSize) },
                 false,
-                exact("installed=1.0.1, latest=v1.0.2, decision=newer_available, download=skipped, notifications_permitted=false, notified=false, $VISIBLE_DETAIL"),
+                exact("installed=1.0.1, latest=v1.0.2, decision=newer_available, download=skipped, notifications_permitted=false, notified=false, announce=not_permitted, $VISIBLE_DETAIL"),
             ),
             Case(
                 "release check failed",
