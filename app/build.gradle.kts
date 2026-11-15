@@ -96,7 +96,7 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.17")
     testImplementation("androidx.work:work-testing:2.12.0")
     testImplementation("com.squareup.okhttp3:mockwebserver:5.5.1")
-    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.77.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.78.0")
 }
 
 val installGitHooks by tasks.registering {
