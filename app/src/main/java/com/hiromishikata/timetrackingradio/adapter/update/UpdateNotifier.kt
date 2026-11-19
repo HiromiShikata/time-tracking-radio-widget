@@ -20,9 +20,11 @@ import com.hiromishikata.timetrackingradio.domain.AnnounceOutcome
 import com.hiromishikata.timetrackingradio.domain.ChannelImportance
 import com.hiromishikata.timetrackingradio.domain.InterruptionFilter
 import com.hiromishikata.timetrackingradio.domain.NotificationConditions
+import com.hiromishikata.timetrackingradio.domain.ReleaseChanges
 import com.hiromishikata.timetrackingradio.domain.SemanticVersion
 import com.hiromishikata.timetrackingradio.domain.StoredUpdateAlert
 import com.hiromishikata.timetrackingradio.domain.UpdateAnnouncer
+import com.hiromishikata.timetrackingradio.domain.composeUpdateNotificationText
 import com.hiromishikata.timetrackingradio.domain.decideUpdateAlert
 import java.io.File
 import java.time.Instant
@@ -57,7 +59,7 @@ class UpdateNotifier(
         manager().activeNotifications.any { it.id == NOTIFICATION_ID && it.tag == null }
     }
 
-    override fun announce(version: SemanticVersion, apk: File): AnnounceOutcome {
+    override fun announce(version: SemanticVersion, apk: File, changes: List<ReleaseChanges>): AnnounceOutcome {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
@@ -78,7 +80,7 @@ class UpdateNotifier(
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_radio)
             .setContentTitle(context.getString(R.string.update_channel_name))
             .setContentText(context.getString(R.string.update_available, version.toString()))
@@ -86,7 +88,10 @@ class UpdateNotifier(
             .setOngoing(false)
             .setOnlyAlertOnce(outcome == AnnounceOutcome.SILENT_UPDATE)
             .setAutoCancel(true)
-            .build()
+        if (changes.isNotEmpty()) {
+            builder.setStyle(NotificationCompat.BigTextStyle().bigText(composeUpdateNotificationText(changes)))
+        }
+        val notification = builder.build()
         val override = postOverride
         if (override != null) {
             override(NOTIFICATION_ID, notification)

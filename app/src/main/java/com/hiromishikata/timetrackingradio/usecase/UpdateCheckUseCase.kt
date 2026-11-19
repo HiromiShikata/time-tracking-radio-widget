@@ -7,6 +7,7 @@ import com.hiromishikata.timetrackingradio.domain.CommunicationFailedException
 import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
 import com.hiromishikata.timetrackingradio.domain.DiagnosticSink
 import com.hiromishikata.timetrackingradio.domain.LastUpdateCheckRepository
+import com.hiromishikata.timetrackingradio.domain.ReleaseChanges
 import com.hiromishikata.timetrackingradio.domain.ReleaseRepository
 import com.hiromishikata.timetrackingradio.domain.UpdateAnnouncer
 import com.hiromishikata.timetrackingradio.domain.UpdateDecision
@@ -34,10 +35,14 @@ class UpdateCheckUseCase(
             return UpdateCheckStatus.FAILED
         }
         return try {
-            val latest = ReleaseReadUseCase(releases).execute()
-            val latestText = "v${latest.version}"
-            when (val decision = decideUpdate(installed, latest)) {
-                is UpdateDecision.Announce -> announceNewer(installedVersionName, latestText, decision, permitted)
+            val recent = ReleaseReadUseCase(releases).execute()
+            val newest = recent.first()
+            val latestText = "v${newest.version}"
+            val changes = recent
+                .filter { it.version > installed }
+                .map { ReleaseChanges(it.version, it.changeLines) }
+            when (val decision = decideUpdate(installed, newest)) {
+                is UpdateDecision.Announce -> announceNewer(installedVersionName, latestText, decision, permitted, changes)
                 UpdateDecision.UpToDate -> complete(installedVersionName, latestText, DECISION_UP_TO_DATE, DOWNLOAD_NONE, permitted, false)
                 is UpdateDecision.NewerWithoutApk -> complete(installedVersionName, latestText, DECISION_NEWER_WITHOUT_APK, DOWNLOAD_NONE, permitted, false)
             }
@@ -55,6 +60,7 @@ class UpdateCheckUseCase(
         latestText: String,
         decision: UpdateDecision.Announce,
         permitted: Boolean,
+        changes: List<ReleaseChanges>,
     ): UpdateCheckStatus {
         if (!permitted) {
             return complete(
@@ -74,7 +80,7 @@ class UpdateCheckUseCase(
             return if (failure.networkReason) UpdateCheckStatus.RETRY_DOWNLOAD else UpdateCheckStatus.RETRY
         }
         val outcome = try {
-            announcer.announce(decision.version, apk)
+            announcer.announce(decision.version, apk, changes)
         } catch (failure: Exception) {
             recordCheck(installedName, latestText, DECISION_NEWER_AVAILABLE, DOWNLOAD_OK, failure.message.orEmpty(), permitted, false)
             return UpdateCheckStatus.FAILED

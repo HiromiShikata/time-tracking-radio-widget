@@ -66,7 +66,7 @@ class UpdateCheckWorker(context: Context, parameters: WorkerParameters) : Corout
     companion object {
         private const val TAG = "UpdateCheckWorker"
         const val KEY_RETRY_ATTEMPT = "retryAttempt"
-        const val LATEST_RELEASE_URL = "https://api.github.com/repos/HiromiShikata/time-tracking-radio-widget/releases/latest"
+        const val LATEST_RELEASE_URL = "https://api.github.com/repos/HiromiShikata/time-tracking-radio-widget/releases?per_page=100"
 
         var downloaderFactory: (File) -> ApkDownloadRepository = { ApkDownloader(it) }
 

@@ -25,7 +25,7 @@ interface WidgetSettingsRepository {
 }
 
 interface ReleaseRepository {
-    fun readLatest(): LatestRelease
+    fun readRecent(): List<LatestRelease>
 }
 
 interface LastUpdateCheckRepository {
