@@ -11,14 +11,14 @@ import com.hiromishikata.timetrackingradio.domain.RequestDiagnostics
 import com.hiromishikata.timetrackingradio.domain.RequestKind
 
 class HttpReleaseRepositoryTest {
-    private val url = "https://api.example.com/repos/example/app/releases/latest"
-    private val validBody = """{"tag_name":"v1.0.7","assets":[{"name":"app.apk","browser_download_url":"https://example.com/app.apk"}]}"""
+    private val url = "https://api.example.com/repos/example/app/releases"
+    private val validBody = """[{"tag_name":"v1.0.7","assets":[{"name":"app.apk","browser_download_url":"https://example.com/app.apk"}]}]"""
 
     @Test
-    fun readsTheLatestReleaseWithAGetRequest() {
+    fun readsTheRecentReleasesWithAGetRequest() {
         val transport = FakeHttpTransport(ArrayDeque(listOf({ HttpResponse(200, null, validBody) })))
-        val release = HttpReleaseRepository(url, transport).readLatest()
-        assertEquals(LatestRelease(SemanticVersion(1, 0, 7), "https://example.com/app.apk", null), release)
+        val releases = HttpReleaseRepository(url, transport).readRecent()
+        assertEquals(listOf(LatestRelease(SemanticVersion(1, 0, 7), "https://example.com/app.apk", null)), releases)
         assertEquals(listOf(HttpRequest("GET", url, null, RequestDiagnostics(RequestKind.UPDATE_CHECK))), transport.requests)
     }
 
@@ -33,7 +33,20 @@ class HttpReleaseRepositoryTest {
         )
         cases.forEach { (name, response) ->
             val transport = FakeHttpTransport(ArrayDeque(listOf(response)))
-            val thrown = runCatching { HttpReleaseRepository(url, transport).readLatest() }.exceptionOrNull()
+            val thrown = runCatching { HttpReleaseRepository(url, transport).readRecent() }.exceptionOrNull()
+            assertTrue("case=$name thrown=$thrown", thrown is CommunicationFailedException)
+        }
+    }
+
+    @Test
+    fun anEmptyOrNonArrayReleaseListBecomesACommunicationFailure() {
+        val cases = listOf(
+            "empty array" to "[]",
+            "single object instead of an array" to """{"tag_name":"v1.0.7"}""",
+        )
+        cases.forEach { (name, body) ->
+            val transport = FakeHttpTransport(ArrayDeque(listOf({ HttpResponse(200, null, body) })))
+            val thrown = runCatching { HttpReleaseRepository(url, transport).readRecent() }.exceptionOrNull()
             assertTrue("case=$name thrown=$thrown", thrown is CommunicationFailedException)
         }
     }

@@ -14,8 +14,10 @@ import com.hiromishikata.timetrackingradio.domain.AnnounceOutcome
 import com.hiromishikata.timetrackingradio.domain.ChannelImportance
 import com.hiromishikata.timetrackingradio.domain.InterruptionFilter
 import com.hiromishikata.timetrackingradio.domain.NotificationConditions
+import com.hiromishikata.timetrackingradio.domain.ReleaseChanges
 import com.hiromishikata.timetrackingradio.domain.SemanticVersion
 import com.hiromishikata.timetrackingradio.domain.StoredUpdateAlert
+import com.hiromishikata.timetrackingradio.domain.composeUpdateNotificationText
 import com.hiromishikata.timetrackingradio.adapter.store.SharedPreferencesKeyValueStore
 import android.content.Context
 import java.time.Duration
@@ -43,7 +45,7 @@ class UpdateNotifierTest {
     @Test
     fun postsTheAnnouncementWhenNotificationsAreGranted() {
         shadowOf(context as Application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
-        UpdateNotifier(context).announce(SemanticVersion(1, 0, 2), apk)
+        UpdateNotifier(context).announce(SemanticVersion(1, 0, 2), apk, emptyList())
         val notifications = shadowOf(manager).allNotifications
         assertEquals(1, notifications.size)
         assertEquals(
@@ -56,7 +58,7 @@ class UpdateNotifierTest {
     @Test
     fun theNotificationUsesTheRadioSmallIcon() {
         shadowOf(context as Application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
-        assertEquals(AnnounceOutcome.ALERTED, UpdateNotifier(context).announce(SemanticVersion(1, 0, 2), apk))
+        assertEquals(AnnounceOutcome.ALERTED, UpdateNotifier(context).announce(SemanticVersion(1, 0, 2), apk, emptyList()))
         val notification = shadowOf(manager).allNotifications.single()
         assertEquals(context.resourceIdOf("drawable", "ic_notification_radio"), notification.icon)
     }
@@ -81,8 +83,8 @@ class UpdateNotifierTest {
             manager.cancelAll()
             context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, android.content.Context.MODE_PRIVATE).edit().clear().commit()
             val notifier = UpdateNotifier(context)
-            case.earlierPosts.forEach { assertTrue(case.name, notifier.announce(it, apk).posted) }
-            assertTrue(case.name, notifier.announce(case.version, apk).posted)
+            case.earlierPosts.forEach { assertTrue(case.name, notifier.announce(it, apk, emptyList()).posted) }
+            assertTrue(case.name, notifier.announce(case.version, apk, emptyList()).posted)
             val notification = shadowOf(manager).allNotifications.single()
             assertEquals(
                 case.name,
@@ -94,8 +96,46 @@ class UpdateNotifierTest {
 
     @Test
     fun skipsTheAnnouncementWhenNotificationsAreDenied() {
-        UpdateNotifier(context).announce(SemanticVersion(1, 0, 2), apk)
+        UpdateNotifier(context).announce(SemanticVersion(1, 0, 2), apk, emptyList())
         assertTrue(shadowOf(manager).allNotifications.isEmpty())
+    }
+
+    @Test
+    fun theChangesAreShownAsBigTextOnlyWhenThereAreAny() {
+        shadowOf(context as Application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        data class Case(
+            val name: String,
+            val changes: List<ReleaseChanges>,
+            val expectedBigText: String?,
+        )
+        val changes = listOf(
+            ReleaseChanges(SemanticVersion(1, 0, 3), listOf("Fix A", "Fix B")),
+            ReleaseChanges(SemanticVersion(1, 0, 2), listOf("Add C")),
+        )
+        val cases = listOf(
+            Case("changes are shown as big text", changes, composeUpdateNotificationText(changes)),
+            Case("no changes leave no big text", emptyList(), null),
+        )
+        cases.forEach { case ->
+            manager.cancelAll()
+            context.getSharedPreferences(SETTINGS_PREFERENCES_NAME, Context.MODE_PRIVATE).edit().clear().commit()
+            assertEquals(
+                case.name,
+                AnnounceOutcome.ALERTED,
+                UpdateNotifier(context).announce(SemanticVersion(1, 0, 2), apk, case.changes),
+            )
+            val notification = shadowOf(manager).allNotifications.single()
+            assertEquals(
+                case.name,
+                "Version 1.0.2 is available. Tap to install.",
+                notification.extras.getCharSequence(Notification.EXTRA_TEXT).toString(),
+            )
+            assertEquals(
+                case.name,
+                case.expectedBigText,
+                notification.extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString(),
+            )
+        }
     }
 }
 
@@ -129,7 +169,7 @@ class UpdateNotifierAndroid13Test {
             }
             val notifier = UpdateNotifier(context)
             assertEquals(case.name, case.expectedPermitted, notifier.notificationsPermitted())
-            assertEquals(case.name, case.expectedAnnounced, notifier.announce(SemanticVersion(1, 0, 2), apk))
+            assertEquals(case.name, case.expectedAnnounced, notifier.announce(SemanticVersion(1, 0, 2), apk, emptyList()))
             assertEquals(case.name, case.expectedPosted, shadowOf(manager).allNotifications.size)
         }
     }
@@ -137,7 +177,7 @@ class UpdateNotifierAndroid13Test {
     @Test
     fun theNotificationCarriesTheDownloadedApkPath() {
         shadowOf(context as Application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
-        assertEquals(AnnounceOutcome.ALERTED, UpdateNotifier(context).announce(SemanticVersion(1, 0, 2), apk))
+        assertEquals(AnnounceOutcome.ALERTED, UpdateNotifier(context).announce(SemanticVersion(1, 0, 2), apk, emptyList()))
         val notification = shadowOf(manager).allNotifications.single()
         val started = shadowOf(notification.contentIntent).savedIntent
         assertEquals(UpdateInstallActivity::class.java.name, started.component!!.className)
@@ -150,7 +190,7 @@ class UpdateNotifierAndroid13Test {
             NotificationChannel("app-updates", context.getString(R.string.update_channel_name), NotificationManager.IMPORTANCE_DEFAULT),
         )
         shadowOf(context as Application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
-        assertEquals(AnnounceOutcome.ALERTED, UpdateNotifier(context).announce(SemanticVersion(1, 0, 2), apk))
+        assertEquals(AnnounceOutcome.ALERTED, UpdateNotifier(context).announce(SemanticVersion(1, 0, 2), apk, emptyList()))
         assertEquals(
             NotificationManager.IMPORTANCE_HIGH,
             manager.getNotificationChannel("app-update-available")?.importance,
@@ -181,7 +221,7 @@ class UpdateNotifierBelowAndroid13Test {
             manager.cancelAll()
             val notifier = UpdateNotifier(context)
             assertEquals(case.name, case.expectedPermitted, notifier.notificationsPermitted())
-            assertEquals(case.name, case.expectedAnnounced, notifier.announce(SemanticVersion(1, 0, 2), apk))
+            assertEquals(case.name, case.expectedAnnounced, notifier.announce(SemanticVersion(1, 0, 2), apk, emptyList()))
             assertEquals(case.name, case.expectedPosted, shadowOf(manager).allNotifications.size)
         }
     }
@@ -248,7 +288,7 @@ class UpdateNotifierConditionsTest {
         shadowOf(context as Application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
         val notifier = UpdateNotifier(context)
         assertEquals(false, notifier.isUpdateNotificationActive())
-        assertEquals(AnnounceOutcome.ALERTED, notifier.announce(SemanticVersion(1, 0, 2), apk))
+        assertEquals(AnnounceOutcome.ALERTED, notifier.announce(SemanticVersion(1, 0, 2), apk, emptyList()))
         assertEquals(true, notifier.isUpdateNotificationActive())
         manager.cancelAll()
         assertEquals(false, notifier.isUpdateNotificationActive())
@@ -346,7 +386,7 @@ class UpdateNotifierReminderTest {
         cases.forEach { case ->
             resetState(case.stored)
             if (case.notificationShowing) showUpdateNotificationAlready()
-            val outcome = UpdateNotifier(context, clock = { now }).announce(announced, apk)
+            val outcome = UpdateNotifier(context, clock = { now }).announce(announced, apk, emptyList())
             assertEquals(case.name, case.expectedOutcome, outcome)
             val posted = shadowOf(manager).allNotifications
             if (outcome.posted) {
@@ -371,7 +411,7 @@ class UpdateNotifierReminderTest {
         resetState(StoredUpdateAlert("1.0.1", alertedTwoHoursAgo))
         val failing = UpdateNotifier(context, clock = { now }, postOverride = { _, _ -> throw IllegalStateException("post failed") })
         val failure = try {
-            failing.announce(announced, apk)
+            failing.announce(announced, apk, emptyList())
             fail("the failed post must surface")
             null
         } catch (thrown: IllegalStateException) {
