@@ -16,6 +16,7 @@ fun parseReleaseList(body: String): List<LatestRelease> =
     parseJsonArray(body)
         .map { it as? JsonObject ?: throw MalformedResponseException("release is not a JSON object") }
         .filterNot { it.booleanFieldOrNull("draft") == true || it.booleanFieldOrNull("prerelease") == true }
+        .filter { parseSemanticVersion(it.stringField("tag_name")) != null }
         .map { parseReleaseObject(it) }
         .sortedByDescending { it.version }
 
