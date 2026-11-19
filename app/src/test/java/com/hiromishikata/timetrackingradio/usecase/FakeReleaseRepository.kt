@@ -10,8 +10,14 @@ class FakeReleaseRepository(
     var readCount = 0
         private set
 
-    override fun readLatest(): LatestRelease {
+    override fun readRecent(): List<LatestRelease> {
         readCount++
-        return onRead()
+        return listOf(onRead())
     }
+}
+
+class FakeRecentReleasesRepository(
+    private val onRead: () -> List<LatestRelease>,
+) : ReleaseRepository {
+    override fun readRecent(): List<LatestRelease> = onRead()
 }

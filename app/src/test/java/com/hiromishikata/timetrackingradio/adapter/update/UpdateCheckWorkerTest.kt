@@ -37,7 +37,7 @@ class UpdateCheckWorkerTest {
 
     @After
     fun tearDown() {
-        UpdateCheckWorker.releaseRepositoryFactory = { _, _ -> HttpReleaseRepository(UpdateCheckWorker.LATEST_RELEASE_URL, HttpUrlConnectionTransport()) }
+        UpdateCheckWorker.releaseRepositoryFactory = { _, _ -> HttpReleaseRepository(UpdateCheckWorker.RELEASES_URL, HttpUrlConnectionTransport()) }
         UpdateCheckWorker.downloaderFactory = { ApkDownloader(it) }
     }
 
@@ -51,7 +51,7 @@ class UpdateCheckWorkerTest {
     fun aFailedReleaseCheckIsRetriedWithinFiveMinutesAndTheRetryIsRecorded() {
         installWorkManagerForTests(context)
         val repository = object : ReleaseRepository {
-            override fun readLatest(): LatestRelease = throw CommunicationFailedException("down")
+            override fun readRecent(): List<LatestRelease> = throw CommunicationFailedException("down")
         }
         val result = runWorkerWith(repository)
         assertTrue("result=$result", result is ListenableWorker.Result.Success)
@@ -77,7 +77,7 @@ class UpdateCheckWorkerTest {
         Shadows.shadowOf(context as Application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
         UpdateCheckWorker.releaseRepositoryFactory = { _, _ ->
             object : ReleaseRepository {
-                override fun readLatest(): LatestRelease = LatestRelease(SemanticVersion(0, 0, 1), "https://example.com/app.apk", 4096L)
+                override fun readRecent(): List<LatestRelease> = listOf(LatestRelease(SemanticVersion(0, 0, 1), "https://example.com/app.apk", 4096L))
             }
         }
         UpdateCheckWorker.downloaderFactory = {
@@ -107,7 +107,7 @@ class UpdateCheckWorkerTest {
     @Test
     fun aCheckThatFindsNothingNewerSucceeds() {
         val repository = object : ReleaseRepository {
-            override fun readLatest(): LatestRelease = LatestRelease(SemanticVersion(0, 0, 0), null, null)
+            override fun readRecent(): List<LatestRelease> = listOf(LatestRelease(SemanticVersion(0, 0, 0), null, null))
         }
         assertTrue(runWorkerWith(repository) is ListenableWorker.Result.Success)
     }
@@ -115,7 +115,7 @@ class UpdateCheckWorkerTest {
     @Test
     fun aCheckWritesItsOutcomeToTheDiagnosticLog() {
         val repository = object : ReleaseRepository {
-            override fun readLatest(): LatestRelease = LatestRelease(SemanticVersion(0, 0, 0), null, null)
+            override fun readRecent(): List<LatestRelease> = listOf(LatestRelease(SemanticVersion(0, 0, 0), null, null))
         }
         runWorkerWith(repository)
         val entries = KeyValueDiagnosticLogRepository(widgetPreferences(context)).readAll()

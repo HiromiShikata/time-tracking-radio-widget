@@ -11,6 +11,7 @@ import com.hiromishikata.timetrackingradio.domain.DiagnosticEventType
 import com.hiromishikata.timetrackingradio.domain.DiagnosticSink
 import com.hiromishikata.timetrackingradio.domain.LastUpdateCheckRepository
 import com.hiromishikata.timetrackingradio.domain.LatestRelease
+import com.hiromishikata.timetrackingradio.domain.ReleaseChanges
 import com.hiromishikata.timetrackingradio.domain.ReleaseRepository
 import com.hiromishikata.timetrackingradio.domain.SemanticVersion
 import com.hiromishikata.timetrackingradio.domain.UpdateAnnouncer
@@ -57,12 +58,14 @@ class UpdateCheckUseCaseTest {
         private val outcome: AnnounceOutcome = AnnounceOutcome.ALERTED,
     ) : UpdateAnnouncer {
         val announced = mutableListOf<Pair<SemanticVersion, File>>()
+        val announcedChanges = mutableListOf<List<ReleaseChanges>>()
 
         override fun notificationsPermitted(): Boolean = permitted
 
-        override fun announce(version: SemanticVersion, apk: File): AnnounceOutcome {
+        override fun announce(version: SemanticVersion, apk: File, changes: List<ReleaseChanges>): AnnounceOutcome {
             order.events += "announce"
             announced += version to apk
+            announcedChanges += changes
             return outcome
         }
 
@@ -74,7 +77,7 @@ class UpdateCheckUseCaseTest {
     private class ThrowingAnnouncer(private val failure: RuntimeException) : UpdateAnnouncer {
         override fun notificationsPermitted(): Boolean = true
 
-        override fun announce(version: SemanticVersion, apk: File): AnnounceOutcome = throw failure
+        override fun announce(version: SemanticVersion, apk: File, changes: List<ReleaseChanges>): AnnounceOutcome = throw failure
 
         override fun notificationConditions(): NotificationConditions = visibleConditions
 
@@ -473,6 +476,54 @@ class UpdateCheckUseCaseTest {
                 "${case.outcome}: $detail",
                 detail.contains("notified=${case.expectedNotified}, announce=${case.outcome.label}, "),
             )
+        }
+    }
+
+    @Test
+    fun announcesTheChangesOfEveryReleaseNewerThanTheInstalledVersionNewestFirst() {
+        data class Case(
+            val name: String,
+            val installed: String,
+            val releases: List<LatestRelease>,
+            val expectedAnnouncedChanges: List<List<ReleaseChanges>>,
+        )
+        val release103 = LatestRelease(SemanticVersion(1, 0, 3), apkUrl, apkSize, listOf("Fix A", "Fix B"))
+        val release102 = LatestRelease(SemanticVersion(1, 0, 2), apkUrl, apkSize, listOf("Add C"))
+        val release101 = LatestRelease(SemanticVersion(1, 0, 1), apkUrl, apkSize, listOf("Old D"))
+        val newestWithoutApk = LatestRelease(SemanticVersion(1, 0, 3), null, null, listOf("Fix A", "Fix B"))
+        val changes103 = ReleaseChanges(SemanticVersion(1, 0, 3), listOf("Fix A", "Fix B"))
+        val changes102 = ReleaseChanges(SemanticVersion(1, 0, 2), listOf("Add C"))
+        val cases = listOf(
+            Case(
+                "installed 1.0.1 gets 1.0.3 and 1.0.2 but not 1.0.1",
+                "1.0.1",
+                listOf(release103, release102, release101),
+                listOf(listOf(changes103, changes102)),
+            ),
+            Case(
+                "installed 1.0.2 gets only 1.0.3",
+                "1.0.2",
+                listOf(release103, release102, release101),
+                listOf(listOf(changes103)),
+            ),
+            Case(
+                "installed 1.0.3 is up to date and nothing is announced",
+                "1.0.3",
+                listOf(release103, release102, release101),
+                emptyList(),
+            ),
+            Case(
+                "newest release without an APK is not announced",
+                "1.0.1",
+                listOf(newestWithoutApk, release102, release101),
+                emptyList(),
+            ),
+        )
+        cases.forEach { case ->
+            val announcer = RecordingAnnouncer()
+            val status = useCase(FakeRecentReleasesRepository { case.releases }, announcer = announcer).execute(case.installed)
+            assertEquals(case.name, UpdateCheckStatus.COMPLETED, status)
+            assertEquals(case.name, case.expectedAnnouncedChanges, announcer.announcedChanges)
         }
     }
 }
