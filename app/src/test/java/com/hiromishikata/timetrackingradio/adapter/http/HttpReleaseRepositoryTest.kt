@@ -43,6 +43,7 @@ class HttpReleaseRepositoryTest {
         val cases = listOf(
             "empty array" to "[]",
             "single object instead of an array" to """{"tag_name":"v1.0.7"}""",
+            "only non-version tags" to """[{"tag_name":"nightly","assets":[]},{"tag_name":"latest","assets":[]}]""",
         )
         cases.forEach { (name, body) ->
             val transport = FakeHttpTransport(ArrayDeque(listOf({ HttpResponse(200, null, body) })))

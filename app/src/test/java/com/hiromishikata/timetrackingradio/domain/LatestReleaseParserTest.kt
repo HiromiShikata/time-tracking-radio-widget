@@ -121,6 +121,42 @@ class LatestReleaseParserTest {
         }
     }
 
+    @Test
+    fun parseReleaseListSkipsNonVersionTagsAndKeepsAMissingOrNonStringTagAsAnError() {
+        data class Case(val name: String, val body: String, val expectedVersions: List<SemanticVersion>?)
+        val cases = listOf(
+            Case(
+                "a non-version tag is skipped between version tags",
+                "[${releaseJson("v1.0.2")},${releaseJson("nightly")},${releaseJson("v1.0.1")}]",
+                listOf(SemanticVersion(1, 0, 2), SemanticVersion(1, 0, 1)),
+            ),
+            Case(
+                "a list of only non-version tags gives an empty list",
+                "[${releaseJson("latest")},${releaseJson("docs-1")}]",
+                emptyList(),
+            ),
+            Case(
+                "a release without tag_name is malformed",
+                """[{"draft":false,"prerelease":false,"assets":[]}]""",
+                null,
+            ),
+            Case(
+                "a release whose tag_name is not a string is malformed",
+                """[{"tag_name":5,"draft":false,"prerelease":false,"assets":[]}]""",
+                null,
+            ),
+        )
+        cases.forEach { case ->
+            val outcome = runCatching { parseReleaseList(case.body).map { it.version } }
+            val thrown = outcome.exceptionOrNull()
+            if (case.expectedVersions == null) {
+                assertTrue("${case.name} thrown=$thrown", thrown is MalformedResponseException)
+            } else {
+                assertEquals("${case.name} thrown=$thrown", case.expectedVersions, outcome.getOrNull())
+            }
+        }
+    }
+
     private fun releaseJson(
         tag: String,
         body: String? = null,

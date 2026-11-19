@@ -37,7 +37,7 @@ class UpdateCheckWorkerTest {
 
     @After
     fun tearDown() {
-        UpdateCheckWorker.releaseRepositoryFactory = { _, _ -> HttpReleaseRepository(UpdateCheckWorker.LATEST_RELEASE_URL, HttpUrlConnectionTransport()) }
+        UpdateCheckWorker.releaseRepositoryFactory = { _, _ -> HttpReleaseRepository(UpdateCheckWorker.RELEASES_URL, HttpUrlConnectionTransport()) }
         UpdateCheckWorker.downloaderFactory = { ApkDownloader(it) }
     }
 
